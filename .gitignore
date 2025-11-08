@@ -2,3 +2,5 @@
 .env
 
 **.pyc
+rainfall.db
+.vscode
