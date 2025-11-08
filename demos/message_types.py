@@ -128,53 +128,202 @@ def _build_template_demo() -> List[SendMessage]:
 
 
 def _build_flex_demo() -> List[SendMessage]:
-    bubble = {
+    container_bubble = {
         "type": "bubble",
-        "hero": {
-            "type": "image",
-            "url": "https://scdn.line-apps.com/n/channel_devcenter/img/fx/01_2_restaurant.png",
-            "size": "full",
-            "aspectRatio": "20:13",
-            "aspectMode": "cover",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {"type": "text", "text": "Container", "size": "sm", "color": "#aaaaaa"},
+                {"type": "text", "text": "Flex 容器類型", "weight": "bold", "size": "xl"},
+            ],
         },
         "body": {
             "type": "box",
             "layout": "vertical",
+            "spacing": "md",
             "contents": [
-                {"type": "text", "text": "Flex Message 示範", "weight": "bold", "size": "xl"},
                 {
                     "type": "box",
                     "layout": "baseline",
-                    "margin": "md",
+                    "spacing": "sm",
                     "contents": [
-                        {"type": "icon", "url": "https://scdn.line-apps.com/n/channel_devcenter/img/fx/01_1_cafe.png"},
-                        {"type": "text", "text": "靈活排版展示", "margin": "sm", "flex": 0},
+                        {"type": "text", "text": "bubble", "flex": 2, "weight": "bold", "color": "#444444"},
+                        {
+                            "type": "text",
+                            "text": "單一版面，適合呈現焦點資訊與互動動作",
+                            "size": "sm",
+                            "wrap": True,
+                            "color": "#777777",
+                            "flex": 5,
+                        },
                     ],
+                },
+                {
+                    "type": "box",
+                    "layout": "baseline",
+                    "spacing": "sm",
+                    "contents": [
+                        {"type": "text", "text": "carousel", "flex": 2, "weight": "bold", "color": "#444444"},
+                        {
+                            "type": "text",
+                            "text": "多個 bubble 組成，可滑動切換多個商品或步驟",
+                            "size": "sm",
+                            "wrap": True,
+                            "color": "#777777",
+                            "flex": 5,
+                        },
+                    ],
+                },
+                {"type": "separator"},
+                {
+                    "type": "text",
+                    "text": "容器決定 Flex Message 的載體與互動邏輯。",
+                    "size": "sm",
+                    "wrap": True,
                 },
             ],
         },
         "footer": {
             "type": "box",
             "layout": "vertical",
-            "spacing": "sm",
             "contents": [
                 {
                     "type": "button",
                     "style": "primary",
-                    "height": "sm",
                     "action": {
                         "type": "uri",
-                        "label": "了解更多",
-                        "uri": "https://developers.line.biz/flex/",
+                        "label": "容器說明",
+                        "uri": "https://developers.line.biz/en/docs/messaging-api/using-flex-messages/#flex-message-container",
                     },
                 }
             ],
-            "flex": 0,
         },
     }
+
+    block_bubble = {
+        "type": "bubble",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {"type": "text", "text": "Block", "size": "sm", "color": "#aaaaaa"},
+                {"type": "text", "text": "版面區塊", "weight": "bold", "size": "xl"},
+            ],
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "spacing": "md",
+            "contents": [
+                {
+                    "type": "box",
+                    "layout": "baseline",
+                    "contents": [
+                        {"type": "text", "text": "header", "flex": 2, "color": "#555555"},
+                        {"type": "text", "text": "呈現標題、階段或狀態列", "flex": 5, "size": "sm", "wrap": True},
+                    ],
+                },
+                {
+                    "type": "box",
+                    "layout": "baseline",
+                    "contents": [
+                        {"type": "text", "text": "hero", "flex": 2, "color": "#555555"},
+                        {"type": "text", "text": "大圖或影片吸引目光", "flex": 5, "size": "sm", "wrap": True},
+                    ],
+                },
+                {
+                    "type": "box",
+                    "layout": "baseline",
+                    "contents": [
+                        {"type": "text", "text": "body", "flex": 2, "color": "#555555"},
+                        {"type": "text", "text": "主要敘述、欄位與列表", "flex": 5, "size": "sm", "wrap": True},
+                    ],
+                },
+                {
+                    "type": "box",
+                    "layout": "baseline",
+                    "contents": [
+                        {"type": "text", "text": "footer", "flex": 2, "color": "#555555"},
+                        {"type": "text", "text": "操作按鈕或補充資訊", "flex": 5, "size": "sm", "wrap": True},
+                    ],
+                },
+                {"type": "separator"},
+                {
+                    "type": "text",
+                    "text": "亦可利用 styles 統一背景與字色。",
+                    "size": "sm",
+                    "wrap": True,
+                },
+            ],
+        },
+        "footer": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "button",
+                    "style": "link",
+                    "height": "sm",
+                    "action": {
+                        "type": "uri",
+                        "label": "Block 範例",
+                        "uri": "https://developers.line.biz/en/docs/messaging-api/using-flex-messages/#bubble",
+                    },
+                }
+            ],
+        },
+    }
+
+    component_bubble = {
+        "type": "bubble",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {"type": "text", "text": "Component", "size": "sm", "color": "#aaaaaa"},
+                {"type": "text", "text": "元件組合", "weight": "bold", "size": "xl"},
+            ],
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "spacing": "md",
+            "contents": [
+                {"type": "text", "text": "常見元件：", "size": "sm"},
+                {
+                    "type": "box",
+                    "layout": "vertical",
+                    "spacing": "sm",
+                    "contents": [
+                        {"type": "text", "text": "• text / span：呈現標題與段落", "size": "sm", "wrap": True},
+                        {"type": "text", "text": "• image / icon：圖片與圖示", "size": "sm", "wrap": True},
+                        {"type": "text", "text": "• button / link：行動按鈕", "size": "sm", "wrap": True},
+                        {"type": "text", "text": "• box：彈性排版容器", "size": "sm", "wrap": True},
+                        {"type": "text", "text": "• separator / spacer / filler：分隔與留白", "size": "sm", "wrap": True},
+                    ],
+                },
+                {"type": "separator"},
+                {
+                    "type": "button",
+                    "style": "secondary",
+                    "action": {
+                        "type": "uri",
+                        "label": "查看所有元件",
+                        "uri": "https://developers.line.biz/en/docs/messaging-api/using-flex-messages/#component",
+                    },
+                },
+            ],
+        },
+    }
+
+    flex_contents = {
+        "type": "carousel",
+        "contents": [container_bubble, block_bubble, component_bubble],
+    }
     return [
-        _intro_text("這是 Flex 訊息示範。"),
-        FlexSendMessage(alt_text="Flex Message 示範", contents=bubble),
+        _intro_text("以下示範 Flex Message 的 Container、Block 與 Component 結構。"),
+        FlexSendMessage(alt_text="Flex Message 結構示範", contents=flex_contents),
     ]
 
 
