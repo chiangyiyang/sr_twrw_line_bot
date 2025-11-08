@@ -1,0 +1,311 @@
+﻿<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+  <meta charset="utf-8" />
+  <title>雨量資料地圖</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <style>
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      font-family: system-ui, 'Noto Sans TC', sans-serif;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+
+    .topbar {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 1000;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 12px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+    }
+
+    .topbar h1 {
+      margin: 0 0 8px;
+      font-size: 18px;
+    }
+
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .control-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      width: 100%;
+      max-width: 360px;
+    }
+
+    .inline-inputs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .controls label {
+      font-size: 13px;
+      color: #333;
+    }
+
+    .controls input,
+    .controls button {
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      font-size: 13px;
+    }
+
+    .controls button {
+      background: #1c90ff;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+    }
+
+    .controls button.secondary {
+      background: #d6e9d6;
+      color: #294721;
+    }
+
+    .controls button.full {
+      width: fit-content;
+      align-self: flex-start;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .status-box {
+      position: absolute;
+      right: 10px;
+      bottom: 10px;
+      z-index: 1000;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="topbar">
+    即時雨量資料
+    <button id="btnToggleFilters" class="secondary full">-</button>
+    <div id="extraFilters" class="controls">
+      <button id="btnReload" class="full">獲取最新資料</button>
+      <div class="control-block">
+        <label for="keyword">測站搜尋：</label>
+        <input type="text" id="keyword" placeholder="例如：建安或 81AI10" />
+        <button id="btnSearchStation" class="full">搜尋測站</button>
+      </div>
+      <div class="control-block">
+        <label for="city">行政區：</label>
+        <div class="inline-inputs">
+          <input type="text" id="city" placeholder="縣市" style="width:120px;" />
+          <input type="text" id="town" placeholder="鄉鎮市區 (選填)" style="width:150px;" />
+        </div>
+        <button id="btnSearchDistrict" class="full">搜尋行政區</button>
+      </div>
+        <div class="control-block">
+          <div> 
+
+            <label for="lon">座標：</label>
+            <button id="btnPickCoordinate" class="secondary full">在地圖上點選</button>
+          </div>
+          <div class="inline-inputs">
+            <input type="text" id="lon" placeholder="經度" style="width:120px;" />
+            <input type="text" id="lat" placeholder="緯度" style="width:120px;" />
+          </div>
+          <button id="btnSearchCoordinate" class="full">搜尋座標</button>
+        </div>
+      <span id="summary" style="font-size:12px;color:#555;"></span>
+    </div>
+  </div>
+  <div id="map"></div>
+  <div class="status-box" id="status">載入中...</div>
+
+  <script>
+    const map = L.map('map', { zoomControl: false }).setView([23.7, 121], 7);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    const markers = L.markerClusterGroup();
+    map.addLayer(markers);
+
+    function toPopup(item) {
+      const rain = item.rainfall || {};
+      const attr = item.attribute || '-';
+      const elev = item.elevation != null ? `${item.elevation} m` : '-';
+      const location = [item.city || '', item.town || ''].filter(Boolean).join(' ');
+      return `
+        <div style="font-family:system-ui,'Noto Sans TC',sans-serif">
+          <strong>${item.stationName}</strong>（${item.stationId}）<br/>
+          觀測時間：${item.obsTime}<br/>
+          位置：${location}（${item.longitude.toFixed(5)}, ${item.latitude.toFixed(5)}）<br/>
+          海拔：${elev}　屬性：${attr}<br/>
+          <hr style="border:none;border-top:1px solid #eee"/>
+          <div>10 分：<strong>${formatRain(rain.min10)}</strong> mm　 1 小時：<strong>${formatRain(rain.hour1)}</strong> mm　 3 小時：<strong>${formatRain(rain.hour3)}</strong> mm</div>
+          <div>6 小時：<strong>${formatRain(rain.hour6)}</strong> mm　 12 小時：<strong>${formatRain(rain.hour12)}</strong> mm　 24 小時：<strong>${formatRain(rain.hour24)}</strong> mm</div>
+        </div>
+      `;
+    }
+
+    function formatRain(value) {
+      if (value === null || value === undefined || value === '-') return '-';
+      return Number(value).toFixed(1);
+    }
+
+    function setStatus(text) {
+      document.getElementById('status').textContent = text;
+    }
+
+    function setSummary(info) {
+      document.getElementById('summary').textContent = info;
+    }
+
+    function renderItems(items, updatedAt) {
+      markers.clearLayers();
+      items.forEach(item => {
+        const marker = L.circleMarker([item.latitude, item.longitude], {
+          radius: 6,
+          weight: 1,
+          color: '#1c90ff',
+          fillColor: '#1c90ff',
+          fillOpacity: 0.8,
+        }).bindPopup(toPopup(item));
+        markers.addLayer(marker);
+      });
+      if (items.length) {
+        const group = L.featureGroup(markers.getLayers());
+        map.fitBounds(group.getBounds().pad(0.2));
+      }
+      setSummary(updatedAt ? `最近更新：${updatedAt}　總筆數：${items.length}` : `總筆數：${items.length}`);
+    }
+
+    async function fetchJson(url) {
+      const resp = await fetch(url, { cache: 'no-store' });
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}`);
+      }
+      return resp.json();
+    }
+
+    async function loadLatest() {
+      try {
+        setStatus('載入最新資料...');
+        const data = await fetchJson('/api/rainfall/latest?limit=500');
+        renderItems(data.items || [], data.updated_at);
+        setStatus(`共 ${data.count || 0} 筆資料`);
+      } catch (err) {
+        console.error(err);
+        setStatus('下載資料失敗，請稍後再試');
+      }
+    }
+
+    async function search(params) {
+      const query = new URLSearchParams(params);
+      try {
+        setStatus('查詢中...');
+        const data = await fetchJson(`/api/rainfall/search?${query.toString()}`);
+        renderItems(data.items || [], data.updated_at);
+        if (data.meta) {
+          setStatus(`查詢 ${JSON.stringify(data.meta)}，共 ${data.count || 0} 筆`);
+        } else {
+          setStatus(`共 ${data.count || 0} 筆`);
+        }
+      } catch (err) {
+        console.error(err);
+        setStatus('查詢失敗，請確認輸入或稍後再試');
+      }
+    }
+
+    const extraFilters = document.getElementById('extraFilters');
+    const toggleFiltersBtn = document.getElementById('btnToggleFilters');
+    const lonInput = document.getElementById('lon');
+    const latInput = document.getElementById('lat');
+    const pickBtn = document.getElementById('btnPickCoordinate');
+    let picking = false;
+
+    toggleFiltersBtn.addEventListener('click', () => {
+      const isHidden = extraFilters.classList.toggle('hidden');
+      toggleFiltersBtn.textContent = isHidden ? '+' : '-';
+    });
+
+    pickBtn.addEventListener('click', () => {
+      picking = !picking;
+      pickBtn.textContent = picking ? '點一下地圖以取得座標' : '在地圖上點選座標';
+      setStatus(picking ? '請在地圖上點選任意位置以取得座標' : '已取消地圖選點');
+    });
+
+    map.on('click', (evt) => {
+      if (!picking) return;
+      picking = false;
+      const { lat, lng } = evt.latlng;
+      lonInput.value = lng.toFixed(6);
+      latInput.value = lat.toFixed(6);
+      pickBtn.textContent = '在地圖上點選座標';
+      setStatus(`已選擇座標：${lng.toFixed(6)}, ${lat.toFixed(6)}`);
+    });
+
+    document.getElementById('btnReload').addEventListener('click', () => loadLatest());
+
+    document.getElementById('btnSearchStation').addEventListener('click', () => {
+      const keyword = document.getElementById('keyword').value.trim();
+      if (!keyword) {
+        alert('請輸入測站關鍵字');
+        return;
+      }
+      search({ type: 'station', keyword });
+    });
+
+    document.getElementById('btnSearchDistrict').addEventListener('click', () => {
+      const city = document.getElementById('city').value.trim();
+      const town = document.getElementById('town').value.trim();
+      if (!city) {
+        alert('請輸入縣市');
+        return;
+      }
+      const params = { type: 'district', city };
+      if (town) params.town = town;
+      search(params);
+    });
+
+    document.getElementById('btnSearchCoordinate').addEventListener('click', () => {
+      const lon = document.getElementById('lon').value.trim();
+      const lat = document.getElementById('lat').value.trim();
+      if (!lon || !lat) {
+        alert('請輸入經度與緯度');
+        return;
+      }
+      search({ type: 'coordinate', lon, lat });
+    });
+
+    loadLatest();
+  </script>
+</body>
+
+</html>

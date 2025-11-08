@@ -1,20 +1,23 @@
-﻿import os
+import os
 import sys
 
-from flask import Flask, request, abort
+from flask import Flask, abort, request, send_from_directory
 from dotenv import load_dotenv
 
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import LocationMessage, MessageEvent, PostbackEvent, TextMessage, TextSendMessage
 
+import check_rainfall
 import find_location
+import rainfall
 from demos import message_types, quick_replies, state
 
 
 load_dotenv()
 
 app = Flask(__name__)
+rainfall.init_app(app)
 
 
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
@@ -33,6 +36,11 @@ handler = WebhookHandler(CHANNEL_SECRET) if CHANNEL_SECRET else None
 @app.get("/")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/rainfall.html")
+def rainfall_page():
+    return send_from_directory(app.root_path, "rainfall.html")
 
 
 @app.post("/callback")
@@ -55,6 +63,9 @@ def callback():
 def handle_text_message(event: MessageEvent):
     print(f"Received message: {event.message.text}")
     if line_bot_api is None:
+        return
+
+    if check_rainfall.handle_message_event(event, line_bot_api):
         return
 
     if find_location.handle_message_event(event, line_bot_api):
@@ -85,6 +96,9 @@ def handle_postback_event(event: PostbackEvent):
 @handler.add(MessageEvent, message=LocationMessage)
 def handle_location_message(event: MessageEvent):
     if line_bot_api is None:
+        return
+
+    if check_rainfall.handle_location_message(event, line_bot_api):
         return
 
     if find_location.handle_location_message(event, line_bot_api):

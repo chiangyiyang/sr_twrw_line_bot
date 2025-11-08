@@ -558,3 +558,44 @@ def handle_location_message(event: MessageEvent, line_bot_api: LineBotApi) -> bo
     session.longitude = event.message.longitude
     session.latitude = event.message.latitude
     return _respond_with_location(event, line_bot_api, session)
+
+
+def list_line_names() -> List[str]:
+    """Return available route names."""
+    return list(_LINE_NAMES)
+
+
+def format_distance_marker(distance: float) -> str:
+    """Expose distance marker formatter for other modules."""
+    return _format_distance_marker(distance)
+
+
+def resolve_route_coordinate(
+    line_text: str,
+    marker_text: str,
+) -> Optional[Tuple[str, float, float, float]]:
+    """Resolve a (line, marker) pair into coordinates."""
+    line_name = _resolve_line_name(line_text)
+    if not line_name:
+        return None
+
+    distance = _parse_distance(marker_text)
+    if distance is None:
+        return None
+
+    coords = _interpolate_coordinates(line_name, distance)
+    if coords is None:
+        return None
+
+    longitude, latitude = coords
+    return line_name, distance, longitude, latitude
+
+
+__all__ = [
+    "handle_message_event",
+    "handle_location_message",
+    "FIND_LOCATION_TOPIC",
+    "list_line_names",
+    "format_distance_marker",
+    "resolve_route_coordinate",
+]
