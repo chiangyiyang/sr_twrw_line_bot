@@ -6,7 +6,16 @@ from dotenv import load_dotenv
 
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import LocationMessage, MessageEvent, PostbackEvent, TextMessage, TextSendMessage
+from linebot.models import (
+    LocationMessage,
+    MessageAction,
+    MessageEvent,
+    PostbackEvent,
+    QuickReply,
+    QuickReplyButton,
+    TextMessage,
+    TextSendMessage,
+)
 
 import check_rainfall
 import find_location
@@ -77,11 +86,25 @@ def handle_text_message(event: MessageEvent):
     if message_types.handle_message_event(event, line_bot_api):
         return
 
+    current_topic = state.get_topic()
     state.set_topic(None)
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=(event.message.text or "")),
-    )
+    if current_topic is None:
+        helper_quick_reply = QuickReply(
+            items=[
+                QuickReplyButton(action=MessageAction(label="查雨量", text="查雨量")),
+                QuickReplyButton(action=MessageAction(label="里程轉座標", text="里程轉座標")),
+                QuickReplyButton(action=MessageAction(label="座標轉里程", text="座標轉里程")),
+            ]
+        )
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text='你好，我是「小鐵」，需要協助嗎？', quick_reply=helper_quick_reply),
+        )
+    else:
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=(event.message.text or "")),
+        )
 
 
 @handler.add(PostbackEvent)
