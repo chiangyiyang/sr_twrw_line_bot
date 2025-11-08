@@ -17,6 +17,7 @@ from linebot.models import (
     TextSendMessage,
 )
 
+import check_cctv
 import check_rainfall
 import find_location
 import rainfall
@@ -52,6 +53,16 @@ def rainfall_page():
     return send_from_directory(app.root_path, "rainfall.html")
 
 
+@app.get("/cctv.html")
+def cctv_page():
+    return send_from_directory(app.root_path, "cctv.html")
+
+
+@app.get("/cctv.json")
+def cctv_data():
+    return send_from_directory(app.root_path, "cctv.json")
+
+
 @app.post("/callback")
 def callback():
     signature = request.headers.get("X-Line-Signature", "")
@@ -77,6 +88,9 @@ def handle_text_message(event: MessageEvent):
     if check_rainfall.handle_message_event(event, line_bot_api):
         return
 
+    if check_cctv.handle_message_event(event, line_bot_api):
+        return
+
     if find_location.handle_message_event(event, line_bot_api):
         return
 
@@ -94,6 +108,7 @@ def handle_text_message(event: MessageEvent):
                 QuickReplyButton(action=MessageAction(label="查雨量", text="查雨量")),
                 QuickReplyButton(action=MessageAction(label="里程轉座標", text="里程轉座標")),
                 QuickReplyButton(action=MessageAction(label="座標轉里程", text="座標轉里程")),
+                QuickReplyButton(action=MessageAction(label="CCTV", text="CCTV")),
             ]
         )
         line_bot_api.reply_message(
@@ -122,6 +137,9 @@ def handle_location_message(event: MessageEvent):
         return
 
     if check_rainfall.handle_location_message(event, line_bot_api):
+        return
+
+    if check_cctv.handle_location_message(event, line_bot_api):
         return
 
     if find_location.handle_location_message(event, line_bot_api):

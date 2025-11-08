@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>台灣 CCTV 分佈地圖</title>
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <!-- Leaflet.markercluster -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <!-- hls.js（若串流是 m3u8 會用到）-->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    #map { height: 100%; }
+    .popup-media { width: 360px; max-width: 90vw; }
+    .popup-media video, .popup-media img { width: 100%; height: auto; display: block; background:#000; }
+    .topbar {
+      position: absolute; left: 10px; top: 10px; z-index: 1000;
+      background: rgba(255,255,255,0.95); padding: 8px 12px; border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.15); font: 14px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, Noto Sans TC, sans-serif;
+    }
+    .topbar input[type="text"] { width: 260px; }
+    .legend { position:absolute; right:10px; bottom:20px; z-index: 1000; background:rgba(255,255,255,.9); padding:6px 10px; border-radius:8px; font-size:12px; }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<div class="topbar">
+  <div style="margin-bottom:6px; font-weight:600;">台灣 CCTV 分佈地圖</div>
+  <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+    <label><input id="autoRefresh" type="checkbox" checked> 自動更新影像</label>
+    <label>間隔 <input id="intervalSec" type="number" min="2" step="1" value="5" style="width:60px;"> 秒</label>
+    <input id="searchBox" type="text" placeholder="關鍵字：縣市/路段/描述…" />
+    <button id="btnReset">重置</button>
+  </div>
+</div>
+<div class="legend">資料源：
+  <a href="https://www.freeway.gov.tw/" target="_blank" rel="noreferrer">交通部高速公路局</a>
+  <a href="https://www.thb.gov.tw/" target="_blank" rel="noreferrer">交通部公路局</a>
+  <a href="https://www.taichung.gov.tw/" target="_blank" rel="noreferrer">臺中市政府</a>
+  <a href="https://www.tainan.gov.tw/" target="_blank" rel="noreferrer">臺南市政府</a>
+  <a href="https://www.twipcam.com/" target="_blank" rel="noreferrer">台灣即時影像監視器</a>
+  <a href="" target="_blank" rel="noreferrer"></a>
+
+</div>
+
+<script>
+(async function () {
+  const MAP_CENTER = [23.7, 120.97]; // 臺灣中心點
+  const map = L.map('map').setView(MAP_CENTER, 8);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap'
+  }).addTo(map);
+
+  const geojsonUrl = 'cctv.json';
+  
+  let geojson;
+  try {
+    const res = await fetch(geojsonUrl);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    geojson = await res.json();
+  } catch (err) {
+    alert('載入 CCTV GeoJSON 失敗：' + err.message + '\n\n請確認檔案路徑為 cctv.json，或改用本機開發伺服器提供靜態檔案。');
+    return;
+  }
+
+  const features = Array.isArray(geojson.features) ? geojson.features : [];
+  const data = features.map(f => {
+    const coords = f.geometry && f.geometry.coordinates;
+    const lng = parseFloat(coords && coords[0]);
+    const lat = parseFloat(coords && coords[1]);
+    const p = f.properties || {};
+    const id = p.id || p.ID || p.CCTVID || '';
+    const name = p.name || p.Location || (p.raw_fields && p.raw_fields.Location) || '';
+    const county = p.city || p.county || '';
+    const url = p.stream_url || p.url || (p.raw_fields && p.raw_fields.url) || '';
+    return { id, name, county, lat, lng, url, raw: f };
+  }).filter(d => Number.isFinite(d.lat) && Number.isFinite(d.lng));
+
+  console.log(`解析出 ${data.length} 筆 CCTV 資料 (來自 GeoJSON)`, data);
+
+  console.log(`解析出 ${data.length} 筆有效 CCTV 資料`, data);
+
+  // 建立圖層與標記
+  const markers = [];
+  const clusterGroup = L.markerClusterGroup();
+  map.addLayer(clusterGroup);
+
+  function renderMarkers(list) {
+    clusterGroup.clearLayers();
+    markers.length = 0;
+    list.forEach(d => {
+      const m = L.marker([d.lat, d.lng]);
+      m.bindPopup(makePopupContent(d), { maxWidth: 420 });
+      // 使用事件物件取得對應 popup，避免全域 selector 導致 race condition
+      m.on('popupopen', (e) => mountPopupMedia(d, e.popup));
+      m.on('popupclose', (e) => unmountPopupMedia(e.popup));
+      clusterGroup.addLayer(m);
+      markers.push({ marker: m, data: d });
+    });
+  }
+
+  // 動態產生 Popup 內容（容器 + 之後掛載 media）
+  function makePopupContent(d) {
+    const safeName = (d.name || d.id || '未命名');
+    const safeCounty = d.county ? `（${d.county}）` : '';
+    const urlInfo = d.url ? `<div style="font-size:12px; word-break:break-all; color:#555;">來源：${d.url}</div>` : '<div style="font-size:12px;color:#a33;">未提供串流/快照 URL</div>';
+    return `
+      <div class="popup-media" data-id="${d.id || ''}">
+        <div style="margin-bottom:6px; font-weight:600;">${safeName}${safeCounty}</div>
+        <div id="media-slot"></div>
+        <div style="display:flex; gap:6px; align-items:center; margin-top:6px;">
+          <button id="btnOpenNew" ${d.url?'' : 'disabled'}>在新視窗開啟</button>
+          <button id="btnRefresh" ${d.url?'' : 'disabled'}>立即更新</button>
+        </div>
+        ${urlInfo}
+      </div>
+    `;
+  }
+
+  let refreshTimer = null;
+  let currentHls = null;
+  let currentVideo = null;
+  let currentIframe = null;
+  let currentImg = null;
+
+  function mountPopupMedia(d, popup) {
+    // 在裝載新媒體前，先釋放任何先前的資源
+    unmountPopupMedia();
+
+    // 優先使用該 popup 的 DOM 節點（避免多個 popup 切換導致選錯元素）
+    let container = null;
+    if (popup && typeof popup.getElement === 'function') {
+      const el = popup.getElement();
+      container = el ? el.querySelector('.popup-media') : null;
+    }
+    if (!container) {
+      // fallback
+      container = document.querySelector('.leaflet-popup .popup-media');
+    }
+
+    // 如果還找不到 container（有時 popup DOM 還未完成建立），嘗試延遲再重試一次
+    if (!container) {
+      setTimeout(() => {
+        // 避免重入太多次；僅嘗試一次
+        let el2 = null;
+        if (popup && typeof popup.getElement === 'function') {
+          el2 = popup.getElement();
+          container = el2 ? el2.querySelector('.popup-media') : null;
+        }
+        if (!container) container = document.querySelector('.leaflet-popup .popup-media');
+        if (!container) return;
+        // 呼叫自身但不會再次觸發延遲分支
+        mountPopupMedia(d, popup);
+      }, 50);
+      return;
+    }
+
+    const slot = container.querySelector('#media-slot');
+    slot.innerHTML = '';
+
+    const url = d.url;
+    if (!url) {
+      slot.innerHTML = '<div style="color:#a33;">無可用影像 URL</div>';
+      return;
+    }
+
+    if (/\.m3u8($|\?)/i.test(url)) {
+      // HLS 串流
+      const video = document.createElement('video');
+      video.controls = true;
+      video.autoplay = true;
+      video.muted = true;
+      slot.appendChild(video);
+    
+      if (window.Hls && Hls.isSupported()) {
+        const hls = new Hls();
+        hls.loadSource(url);
+        hls.attachMedia(video);
+        currentHls = hls;
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = url;
+      } else {
+        slot.innerHTML = '<div style="color:#a33;">此瀏覽器不支援 HLS 播放。</div>';
+      }
+    
+      currentVideo = video;
+    } else if (/\.(jpg|jpeg|png)($|\?)/i.test(url) || /mjpg|mjpeg|snapshot|jpg|jpeg|png|stream/i.test(url)) {
+      // 以 <img> 顯示（含自動更新）；加入 MJPEG/mjpg 支援（常見 MJPEG endpoint）
+      const img = document.createElement('img');
+      img.alt = d.name || d.id || 'CCTV';
+      img.style.background = '#000';
+      slot.appendChild(img);
+      const loadImg = () => {
+        const bust = Date.now();
+        img.src = url.includes('?') ? `${url}&_t=${bust}` : `${url}?_t=${bust}`;
+      };
+      // 先嘗試立即載入；若為 mjpg 類型，延遲再試一次以兼容部分伺服器
+      loadImg();
+      if (/mjpg/i.test(url) && !url.match(/\.(jpg|jpeg|png)($|\?)/i)) {
+        setTimeout(loadImg, 200);
+      }
+
+      const doAuto = () => {
+        const enabled = document.querySelector('#autoRefresh').checked;
+        const sec = Math.max(2, parseInt(document.querySelector('#intervalSec').value || '5', 10));
+        if (enabled) {
+          refreshTimer = setInterval(loadImg, sec * 1000);
+        }
+      };
+      // 確保先前的 timer 已清除
+      if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+      doAuto();
+
+      // 立即更新按鈕（針對此 popup 節點）
+      const btnRefresh = container.querySelector('#btnRefresh');
+      if (btnRefresh) btnRefresh.onclick = loadImg;
+
+      currentImg = img;
+    } else {
+      // 其他類型先嘗試 iframe 內嵌（嘗試調整 Referer 與 allow 屬性；失敗時自動降級為後端代理 /api/proxy）
+      const iframe = document.createElement('iframe');
+      iframe.src = url;
+      iframe.style.width = '100%';
+      iframe.style.height = '240px';
+      // 嘗試送出完整 Referer（有些 CCTV 伺服器以 Referer 做驗證），必要時可改為 'origin' 或 'no-referrer'
+      iframe.referrerPolicy = 'unsafe-url';
+      // 允許自動播放與全螢幕等（僅示意）
+      iframe.setAttribute('allow', 'autoplay; fullscreen; camera; microphone');
+      iframe.allowFullscreen = true;
+      iframe.loading = 'lazy';
+      // 若 iframe 無法載入（例如被 X-Frame-Options 或 CSP 擋住），嘗試使用後端代理路徑 /api/proxy?url=...
+      iframe.onerror = () => {
+        try {
+          iframe.src = '/api/proxy?url=' + encodeURIComponent(url);
+        } catch (e) {
+          // ignore
+        }
+      };
+      slot.appendChild(iframe);
+      currentIframe = iframe;
+
+      currentIframe = iframe;
+    }
+
+    const btnOpen = container.querySelector('#btnOpenNew');
+    if (btnOpen && url) btnOpen.onclick = () => window.open(url, '_blank', 'noopener');
+  }
+
+  function unmountPopupMedia(popup) {
+    try {
+      if (refreshTimer) {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+      }
+    } catch (e) {
+      refreshTimer = null;
+    }
+
+    // 銷毀 HLS 實例
+    if (currentHls) {
+      try { currentHls.destroy(); } catch (e) {}
+      currentHls = null;
+    }
+
+    // 停止並移除 video src
+    if (currentVideo) {
+      try {
+        currentVideo.pause();
+        currentVideo.removeAttribute && currentVideo.removeAttribute('src');
+        currentVideo.load && currentVideo.load();
+      } catch (e) {}
+      currentVideo = null;
+    }
+
+    // 清掉 img src
+    if (currentImg) {
+      try { currentImg.removeAttribute && currentImg.removeAttribute('src'); } catch (e) {}
+      currentImg = null;
+    }
+
+    // 卸載 iframe（導向 blank）
+    if (currentIframe) {
+      try { currentIframe.src = 'about:blank'; } catch (e) {}
+      currentIframe = null;
+    }
+
+    // 若提供了 popup，試著清除該 popup 內的 media 元素（額外保險）
+    if (popup && typeof popup.getElement === 'function') {
+      try {
+        const el = popup.getElement();
+        if (el) {
+          const v = el.querySelector('video');
+          if (v) { try { v.pause(); v.removeAttribute && v.removeAttribute('src'); v.load && v.load(); } catch(e) {} }
+          const i = el.querySelector('iframe');
+          if (i) { try { i.src = 'about:blank'; } catch(e) {} }
+          const im = el.querySelector('img');
+          if (im) { try { im.removeAttribute && im.removeAttribute('src'); } catch(e) {} }
+        }
+      } catch (e) {}
+    }
+  }
+
+  // 搜尋 / 篩選
+  const $search = document.getElementById('searchBox');
+  const $reset = document.getElementById('btnReset');
+  function applyFilter() {
+    const q = ($search.value || '').trim();
+    if (!q) { renderMarkers(data); return; }
+    const kw = q.toLowerCase();
+    const list = data.filter(d =>
+      (d.name && d.name.toLowerCase().includes(kw)) ||
+      (d.county && d.county.toLowerCase().includes(kw)) ||
+      (d.id && d.id.toLowerCase().includes(kw))
+    );
+    renderMarkers(list);
+  }
+  $search.addEventListener('keydown', e => { if (e.key === 'Enter') applyFilter(); });
+  $reset.addEventListener('click', () => { $search.value = ''; renderMarkers(data); });
+
+  // 初次渲染
+  renderMarkers(data);
+
+  // 視野調整到所有點
+  const bounds = L.latLngBounds(data.map(d => [d.lat, d.lng]));
+  if (bounds.isValid()) map.fitBounds(bounds.pad(0.05));
+})();
+</script>
+</body>
+</html>
