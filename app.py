@@ -6,8 +6,9 @@ from dotenv import load_dotenv
 
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, PostbackEvent, TextMessage, TextSendMessage
+from linebot.models import LocationMessage, MessageEvent, PostbackEvent, TextMessage, TextSendMessage
 
+import find_location
 from demos import message_types, quick_replies, state
 
 
@@ -52,7 +53,11 @@ def callback():
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event: MessageEvent):
+    print(f"Received message: {event.message.text}")
     if line_bot_api is None:
+        return
+
+    if find_location.handle_message_event(event, line_bot_api):
         return
 
     if quick_replies.handle_message_event(event, line_bot_api):
@@ -74,6 +79,15 @@ def handle_postback_event(event: PostbackEvent):
         return
 
     if quick_replies.handle_postback_event(event, line_bot_api):
+        return
+
+
+@handler.add(MessageEvent, message=LocationMessage)
+def handle_location_message(event: MessageEvent):
+    if line_bot_api is None:
+        return
+
+    if find_location.handle_location_message(event, line_bot_api):
         return
 
 
