@@ -2,5 +2,10 @@
 .env
 
 **.pyc
-rainfall.db
 .vscode
+
+
+events
+*.db
+*.db-shm
+*.db-wal
