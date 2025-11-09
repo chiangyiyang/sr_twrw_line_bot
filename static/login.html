@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+  <meta charset="utf-8" />
+  <title>事件後台登入</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+    :root {
+      color-scheme: light;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, 'Noto Sans TC', sans-serif;
+      background: radial-gradient(circle at top, #f0f4ff, #e8edf5 45%, #dfe4ec);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .auth-card {
+      width: min(420px, 100%);
+      background: #fff;
+      border-radius: 20px;
+      padding: 32px;
+      box-shadow: 0 20px 50px rgba(15, 23, 42, 0.15);
+      text-align: center;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.75rem;
+      color: #0f172a;
+    }
+
+    p {
+      margin: 0 0 20px;
+      color: #475569;
+      line-height: 1.6;
+    }
+
+    .status {
+      margin-top: 16px;
+      font-size: 0.95rem;
+      color: #475569;
+    }
+
+    .status.error {
+      color: #b01e1e;
+    }
+
+    .links {
+      margin-top: 32px;
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      font-size: 0.9rem;
+    }
+
+    .links a {
+      color: #2563eb;
+      text-decoration: none;
+    }
+
+    .links a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+
+<body>
+  <main class="auth-card">
+    <h1>事件後台登入</h1>
+    <p>請使用授權的 Google 帳號登入後台，才能管理事件資料與進行編輯作業。</p>
+    <div id="googleButton" style="display:inline-block;"></div>
+    <div class="status" id="statusMessage">載入登入設定...</div>
+    <div class="links">
+      <a href="/events.html">回事件地圖</a>
+      <a href="/rainfall.html">雨量地圖</a>
+    </div>
+  </main>
+
+  <script>
+    const statusMessage = document.getElementById("statusMessage");
+    const googleButton = document.getElementById("googleButton");
+
+    function setStatus(text, isError = false) {
+      statusMessage.textContent = text;
+      statusMessage.classList.toggle("error", Boolean(isError));
+    }
+
+    function redirectToAdmin() {
+      window.location.replace("/events_admin.html");
+    }
+
+    async function checkExistingSession() {
+      try {
+        const resp = await fetch("/auth/status", { cache: "no-store" });
+        if (!resp.ok) {
+          return false;
+        }
+        const data = await resp.json();
+        if (data.authenticated) {
+          redirectToAdmin();
+          return true;
+        }
+      } catch (err) {
+        console.warn("auth status failed", err);
+      }
+      return false;
+    }
+
+    function renderGoogleButton(clientId) {
+      if (!(window.google && window.google.accounts && window.google.accounts.id)) {
+        setTimeout(() => renderGoogleButton(clientId), 100);
+        return;
+      }
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: handleCredentialResponse,
+        ux_mode: "popup",
+      });
+      window.google.accounts.id.renderButton(googleButton, {
+        theme: "outline",
+        size: "large",
+        width: 280,
+        type: "standard",
+        text: "signin_with",
+        shape: "pill",
+      });
+      setStatus("請點擊按鈕並選擇授權的 Google 帳號登入。");
+    }
+
+    async function handleCredentialResponse(response) {
+      if (!response || !response.credential) {
+        setStatus("未取得登入憑證，請再試一次。", true);
+        return;
+      }
+      setStatus("驗證中，請稍候...");
+      try {
+        const resp = await fetch("/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ credential: response.credential }),
+        });
+        if (!resp.ok) {
+          const msg = await resp.text();
+          throw new Error(msg || `HTTP ${resp.status}`);
+        }
+        redirectToAdmin();
+      } catch (err) {
+        console.error(err);
+        setStatus(`登入失敗：${err.message}`, true);
+      }
+    }
+
+    async function bootstrap() {
+      const hasSession = await checkExistingSession();
+      if (hasSession) {
+        return;
+      }
+      try {
+        const resp = await fetch("/auth/config", { cache: "no-store" });
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+        if (!data.google_client_id) {
+          throw new Error("尚未設定 Google Client ID");
+        }
+        renderGoogleButton(data.google_client_id);
+      } catch (err) {
+        console.error(err);
+        setStatus(`載入登入設定失敗：${err.message}`, true);
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", bootstrap);
+  </script>
+</body>
+
+</html>

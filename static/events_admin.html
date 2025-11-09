@@ -57,6 +57,22 @@
       padding: 24px;
     }
 
+    .auth-badge {
+      text-align: right;
+      font-size: 0.9rem;
+      color: #555;
+    }
+
+    .auth-badge strong {
+      display: block;
+      font-size: 0.95rem;
+      color: #222;
+    }
+
+    .auth-badge button {
+      margin-top: 6px;
+    }
+
     .d-none {
       display: none !important;
     }
@@ -70,17 +86,23 @@
         <h1 class="h3 mb-0">事件回報後台</h1>
         <small class="text-muted">管理 LINE 回報資料，支援分頁、篩選與維護操作。</small>
       </div>
-      <div class="d-flex gap-2 mt-3 mt-md-0">
-        <button class="btn btn-primary" id="btnAdd">新增事件</button>
-        <div class="btn-group">
-          <button class="btn btn-outline-secondary" id="btnExportJson">匯出 JSON</button>
-          <button class="btn btn-outline-secondary" id="btnExportCsv">匯出 CSV</button>
+      <div class="d-flex flex-column align-items-end gap-2 mt-3 mt-md-0">
+        <div class="auth-badge">
+          <strong id="authUser">正在驗證...</strong>
+          <button class="btn btn-sm btn-outline-secondary d-none" type="button" id="btnLogout">登出</button>
         </div>
-        <label class="btn btn-outline-secondary mb-0">
-          匯入(JSON/CSV)
-          <input type="file" id="importInput" hidden accept=".json,.csv" />
-        </label>
-        <button class="btn btn-outline-danger" id="btnBulkDelete" disabled>刪除選取</button>
+        <div class="d-flex gap-2 flex-wrap justify-content-end">
+          <button class="btn btn-primary" id="btnAdd">新增事件</button>
+          <div class="btn-group">
+            <button class="btn btn-outline-secondary" id="btnExportJson">匯出 JSON</button>
+            <button class="btn btn-outline-secondary" id="btnExportCsv">匯出 CSV</button>
+          </div>
+          <label class="btn btn-outline-secondary mb-0">
+            匯入(JSON/CSV)
+            <input type="file" id="importInput" hidden accept=".json,.csv" />
+          </label>
+          <button class="btn btn-outline-danger" id="btnBulkDelete" disabled>刪除選取</button>
+        </div>
       </div>
     </div>
 
@@ -251,7 +273,21 @@
     const modalTitle = document.getElementById("modalTitle");
     const btnCloseModal = document.getElementById("btnCloseModal");
     const btnCancelModal = document.getElementById("btnCancelModal");
+    const authUserLabel = document.getElementById("authUser");
+    const btnLogout = document.getElementById("btnLogout");
     let editingId = null;
+
+    function redirectToLogin() {
+      window.location.replace("/login.html");
+    }
+
+    function isUnauthorized(resp) {
+      if (resp && resp.status === 401) {
+        redirectToLogin();
+        return true;
+      }
+      return false;
+    }
 
     function buildQuery(params) {
       const searchParams = new URLSearchParams();
@@ -262,6 +298,40 @@
       });
       return searchParams.toString();
     }
+
+    async function ensureAuthenticated() {
+      try {
+        const resp = await fetch("/auth/status", { cache: "no-store" });
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+        if (!data.authenticated) {
+          redirectToLogin();
+          return false;
+        }
+        const email = data.user?.email || "未知帳號";
+        const name = data.user?.name;
+        authUserLabel.textContent = name ? `已登入：${name}（${email}）` : `已登入：${email}`;
+        btnLogout.classList.remove("d-none");
+        btnLogout.disabled = false;
+        return true;
+      } catch (err) {
+        redirectToLogin();
+        return false;
+      }
+    }
+
+    btnLogout.addEventListener("click", async () => {
+      btnLogout.disabled = true;
+      try {
+        await fetch("/auth/logout", { method: "POST" });
+      } catch (err) {
+        console.error(err);
+      } finally {
+        redirectToLogin();
+      }
+    });
 
     async function fetchEvents() {
       const query = buildQuery({
@@ -275,6 +345,7 @@
       try {
         const resp = await fetch(`/api/events/?${query}`);
         if (!resp.ok) {
+          if (isUnauthorized(resp)) return;
           throw new Error(`HTTP ${resp.status}`);
         }
         const data = await resp.json();
@@ -400,6 +471,7 @@
       if (!confirm(`確定要刪除事件 ${id} 嗎？`)) return;
       const resp = await fetch(`/api/events/${id}`, { method: "DELETE" });
       if (!resp.ok) {
+        if (isUnauthorized(resp)) return;
         alert(`刪除失敗：${resp.status}`);
         return;
       }
@@ -416,6 +488,7 @@
         body: JSON.stringify({ ids: Array.from(state.selected) }),
       });
       if (!resp.ok) {
+        if (isUnauthorized(resp)) return;
         alert(`批次刪除失敗：${resp.status}`);
         return;
       }
@@ -438,6 +511,7 @@
       const query = buildQuery({ format, ...state.filters });
       const resp = await fetch(`/api/events/export?${query}`);
       if (!resp.ok) {
+        if (isUnauthorized(resp)) return;
         alert(`匯出失敗：${resp.status}`);
         return;
       }
@@ -479,6 +553,7 @@
         body,
       });
       if (!resp.ok) {
+        if (isUnauthorized(resp)) return;
         const msg = await resp.text();
         alert(`匯入失敗：${msg}`);
         return;
@@ -525,6 +600,7 @@
     async function openEditModal(id) {
       const resp = await fetch(`/api/events/${id}`);
       if (!resp.ok) {
+        if (isUnauthorized(resp)) return;
         alert(`讀取資料失敗：${resp.status}`);
         return;
       }
@@ -566,6 +642,7 @@
           body: JSON.stringify(payload),
         });
         if (!resp.ok) {
+          if (isUnauthorized(resp)) return;
           const msg = await resp.text();
           alert(`儲存失敗：${msg}`);
           return;
@@ -577,8 +654,11 @@
       }
     });
 
-    document.addEventListener("DOMContentLoaded", () => {
-      fetchEvents();
+    document.addEventListener("DOMContentLoaded", async () => {
+      const authorized = await ensureAuthenticated();
+      if (authorized) {
+        fetchEvents();
+      }
     });
   </script>
 </body>

@@ -14,6 +14,7 @@ from flask import Blueprint, Response, abort, jsonify, request
 from . import repository
 from .models import ReportEventRecord
 from ..paths import EVENT_PICTURES_DIR
+from ..auth import login_required
 
 api_bp = Blueprint("report_events_api", __name__, url_prefix="/api/events")
 
@@ -129,6 +130,7 @@ def get_event(event_id: int):
 
 
 @api_bp.post("/")
+@login_required
 def create_event():
     data = request.get_json(silent=True) or {}
     if not isinstance(data, dict):
@@ -142,6 +144,7 @@ def create_event():
 
 
 @api_bp.put("/<int:event_id>")
+@login_required
 def update_event(event_id: int):
     data = request.get_json(silent=True) or {}
     if not isinstance(data, dict):
@@ -157,6 +160,7 @@ def update_event(event_id: int):
 
 
 @api_bp.delete("/<int:event_id>")
+@login_required
 def delete_event(event_id: int):
     event = repository.get_event(event_id)
     if not event:
@@ -167,6 +171,7 @@ def delete_event(event_id: int):
 
 
 @api_bp.post("/bulk-delete")
+@login_required
 def bulk_delete():
     data = request.get_json(silent=True) or {}
     ids = data.get("ids")
@@ -197,6 +202,7 @@ def _export_csv(items: List[dict]) -> Response:
 
 
 @api_bp.get("/export")
+@login_required
 def export_events():
     filters = _parse_filters()
     format_type = (request.args.get("format") or "json").lower()
@@ -226,6 +232,7 @@ def _parse_import_items(format_type: str) -> List[dict]:
 
 
 @api_bp.post("/import")
+@login_required
 def import_events():
     format_type = (request.args.get("format") or "").lower()
     if not format_type:
