@@ -33,7 +33,7 @@ _COORDINATE_TRIGGERS = {"座標轉里程", "坐標轉里程"}
 _CANCEL_KEYWORDS = {"取消", "結束", "退出"}
 _NUMBER_PATTERN = re.compile(r"[-+]?\d+(?:\.\d+)?")
 
-_DATA_PATH = Path(__file__).resolve().parents[1] / "data.json"
+_DATA_PATH = Path(__file__).resolve().parents[1] / "railway_data.json"
 
 
 def _load_line_data() -> Dict[str, List[Dict[str, float]]]:
