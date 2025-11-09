@@ -7,15 +7,17 @@ import threading
 from pathlib import Path
 from typing import Optional
 
+from ..paths import RAINFALL_DB_PATH
+
 _CONNECTION: Optional[sqlite3.Connection] = None
 _LOCK = threading.Lock()
 
 
 def _resolve_db_path() -> Path:
-    path_text = os.getenv("RAINFALL_DB_PATH", "rainfall.db")
-    path = Path(path_text)
+    path_text = os.getenv("RAINFALL_DB_PATH")
+    path = Path(path_text) if path_text else RAINFALL_DB_PATH
     if not path.is_absolute():
-        path = Path(__file__).resolve().parents[1] / path
+        path = (Path(__file__).resolve().parents[1] / path).resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 

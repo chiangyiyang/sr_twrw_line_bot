@@ -57,7 +57,7 @@
     attribution: '&copy; OpenStreetMap'
   }).addTo(map);
 
-  const geojsonUrl = 'cctv.json';
+  const geojsonUrl = 'cctv_data.json';
   
   let geojson;
   try {
@@ -65,7 +65,7 @@
     if (!res.ok) throw new Error('HTTP ' + res.status);
     geojson = await res.json();
   } catch (err) {
-    alert('載入 CCTV GeoJSON 失敗：' + err.message + '\n\n請確認檔案路徑為 cctv.json，或改用本機開發伺服器提供靜態檔案。');
+      alert('載入 CCTV GeoJSON 失敗：' + err.message + '\n\n請確認檔案路徑為 cctv_data.json，或改用本機開發伺服器提供靜態檔案。');
     return;
   }
 

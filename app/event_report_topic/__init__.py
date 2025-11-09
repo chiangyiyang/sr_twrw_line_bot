@@ -23,10 +23,11 @@ from linebot.models import (
     TextSendMessage,
 )
 
-from demos.state import get_topic, set_topic
-from report_event import repository
-from report_event.models import ReportEventRecord
-from report_event.public import get_public_page_url
+from ..demos.state import get_topic, set_topic
+from . import repository
+from .models import ReportEventRecord
+from .public import get_public_page_url
+from ..paths import EVENT_PICTURES_DIR
 
 
 REPORT_EVENT_TOPIC = "Report event"
@@ -41,7 +42,7 @@ _TRACK_SIDES = ["東正線", "西正線"]
 _MILEAGE_PATTERN = re.compile(r"^(?:k|K)?\s*(\d+)(?:\+(\d+))?$")
 _COORD_PATTERN = re.compile(r"[-+]?\d+(?:\.\d+)?")
 
-_PICTURE_DIR = Path(__file__).resolve().parents[1] / "events" / "pictures"
+_PICTURE_DIR = EVENT_PICTURES_DIR
 
 
 def _normalize_text(text: str) -> str:

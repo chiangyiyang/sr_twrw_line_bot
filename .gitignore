@@ -4,8 +4,8 @@
 **.pyc
 .vscode
 
-
-events
-*.db
-*.db-shm
-*.db-wal
+storage/events/pictures/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.json

@@ -21,7 +21,8 @@ from linebot.models import (
     TextSendMessage,
 )
 
-from demos.state import get_topic, set_topic
+from ..demos.state import get_topic, set_topic
+from ..paths import CCTV_DATA_PATH
 
 
 CHECK_CCTV_TOPIC = "Check CCTV"
@@ -36,7 +37,7 @@ _COORD_PATTERN = re.compile(r"[-+]?\d+(?:\.\d+)?")
 _CLEAN_PATTERN = re.compile(r"[^\w\u4e00-\u9fff]+")
 _AREA_PATTERN = re.compile(r"[\u4e00-\u9fff]{1,6}[市縣區鄉鎮里村]")
 
-_DATA_PATH = Path(__file__).resolve().parents[1] / "cctv.json"
+_DATA_PATH = CCTV_DATA_PATH
 
 
 @dataclass

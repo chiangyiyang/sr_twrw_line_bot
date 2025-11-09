@@ -18,19 +18,20 @@ from linebot.models import (
     TextSendMessage,
 )
 
-import check_cctv
-import check_rainfall
-import find_location
-import rainfall
-import report_event
-from report_event.api import api_bp as report_event_api_bp
-from demos import message_types, quick_replies, state
+from . import cctv_topic
+from . import rainfall_topic
+from . import location_topic
+from . import rainfall_service
+from . import event_report_topic
+from .event_report_topic.api import api_bp as report_event_api_bp
+from .demos import message_types, quick_replies, state
+from .paths import STATIC_DIR, DATA_DIR, EVENT_PICTURES_DIR
 
 
 load_dotenv()
 
 app = Flask(__name__)
-rainfall.init_app(app)
+rainfall_service.init_app(app)
 app.register_blueprint(report_event_api_bp)
 
 
@@ -54,33 +55,32 @@ def health():
 
 @app.get("/rainfall.html")
 def rainfall_page():
-    return send_from_directory(app.root_path, "rainfall.html")
+    return send_from_directory(str(STATIC_DIR), "rainfall.html")
 
 
 @app.get("/cctv.html")
 def cctv_page():
-    return send_from_directory(app.root_path, "cctv.html")
+    return send_from_directory(str(STATIC_DIR), "cctv.html")
 
 
-@app.get("/cctv.json")
+@app.get("/cctv_data.json")
 def cctv_data():
-    return send_from_directory(app.root_path, "cctv.json")
+    return send_from_directory(str(DATA_DIR), "cctv_data.json")
 
 
 @app.get("/events.html")
 def events_page():
-    return send_from_directory(app.root_path, "events.html")
+    return send_from_directory(str(STATIC_DIR), "events.html")
 
 
 @app.get("/events/pictures/<path:filename>")
 def event_picture(filename: str):
-    pictures_dir = os.path.join(app.root_path, "events", "pictures")
-    return send_from_directory(pictures_dir, filename)
+    return send_from_directory(str(EVENT_PICTURES_DIR), filename)
 
 
 @app.get("/events_admin.html")
 def events_admin_page():
-    return send_from_directory(app.root_path, "events_admin.html")
+    return send_from_directory(str(STATIC_DIR), "events_admin.html")
 
 
 @app.post("/callback")
@@ -105,16 +105,16 @@ def handle_text_message(event: MessageEvent):
     if line_bot_api is None:
         return
 
-    if check_rainfall.handle_message_event(event, line_bot_api):
+    if rainfall_topic.handle_message_event(event, line_bot_api):
         return
 
-    if check_cctv.handle_message_event(event, line_bot_api):
+    if cctv_topic.handle_message_event(event, line_bot_api):
         return
 
-    if find_location.handle_message_event(event, line_bot_api):
+    if location_topic.handle_message_event(event, line_bot_api):
         return
 
-    if report_event.handle_message_event(event, line_bot_api):
+    if event_report_topic.handle_message_event(event, line_bot_api):
         return
 
     if quick_replies.handle_message_event(event, line_bot_api):
@@ -160,16 +160,16 @@ def handle_location_message(event: MessageEvent):
     if line_bot_api is None:
         return
 
-    if report_event.handle_location_message(event, line_bot_api):
+    if event_report_topic.handle_location_message(event, line_bot_api):
         return
 
-    if check_rainfall.handle_location_message(event, line_bot_api):
+    if rainfall_topic.handle_location_message(event, line_bot_api):
         return
 
-    if check_cctv.handle_location_message(event, line_bot_api):
+    if cctv_topic.handle_location_message(event, line_bot_api):
         return
 
-    if find_location.handle_location_message(event, line_bot_api):
+    if location_topic.handle_location_message(event, line_bot_api):
         return
 
 
@@ -178,7 +178,7 @@ def handle_image_message(event: MessageEvent):
     if line_bot_api is None:
         return
 
-    if report_event.handle_image_message(event, line_bot_api):
+    if event_report_topic.handle_image_message(event, line_bot_api):
         return
 
 

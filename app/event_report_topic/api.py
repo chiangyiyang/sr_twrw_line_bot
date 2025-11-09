@@ -13,6 +13,7 @@ from flask import Blueprint, Response, abort, jsonify, request
 
 from . import repository
 from .models import ReportEventRecord
+from ..paths import EVENT_PICTURES_DIR
 
 api_bp = Blueprint("report_events_api", __name__, url_prefix="/api/events")
 
@@ -244,7 +245,7 @@ def import_events():
     return jsonify({"imported": inserted})
 
 
-_PICTURES_DIR = Path(os.getenv("EVENTS_PICTURES_DIR") or (Path(__file__).resolve().parents[1] / "events" / "pictures"))
+_PICTURES_DIR = Path(os.getenv("EVENTS_PICTURES_DIR") or EVENT_PICTURES_DIR)
 
 
 def _photo_path(filename: Optional[str]) -> Optional[Path]:

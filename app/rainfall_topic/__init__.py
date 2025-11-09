@@ -15,9 +15,9 @@ from linebot.models import (
     QuickReplyButton,
     TextSendMessage,
 )
-from demos.state import get_topic, set_topic
-from rainfall import get_public_page_url, repository
-from rainfall.models import StationObservation
+from ..demos.state import get_topic, set_topic
+from ..rainfall_service import get_public_page_url, repository
+from ..rainfall_service.models import StationObservation
 
 CHECK_RAINFALL_TOPIC = "Check rainfall"
 _TRIGGERS = {"查雨量", "雨量站", "查詢雨量", "下雨嗎"}
