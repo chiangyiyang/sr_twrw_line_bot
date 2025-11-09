@@ -32,7 +32,7 @@ from ..paths import EVENT_PICTURES_DIR
 
 REPORT_EVENT_TOPIC = "Report event"
 _TRIGGERS = {"回報事件", "事件回報", "災情回報"}
-_CANCEL_KEYWORDS = {"取消", "取消事件回報", "結束事件回報", "退出事件回報"}
+_CANCEL_KEYWORDS = {"取消", "結束", "退出", "取消事件回報", "結束事件回報", "退出事件回報"}
 _CONFIRM_YES = {"是", "是的", "確認", "沒問題", "ok", "ok的", "ＯＫ"}
 _CONFIRM_NO = {"否", "不是", "重新輸入", "不正確", "否定"}
 
@@ -55,11 +55,16 @@ _CONFIRM_YES_TOKENS = {_normalize_text(item) for item in _CONFIRM_YES}
 _CONFIRM_NO_TOKENS = {_normalize_text(item) for item in _CONFIRM_NO}
 
 
+def _cancel_button() -> QuickReplyButton:
+    return QuickReplyButton(action=MessageAction(label="取消", text="取消"))
+
+
 def _confirm_quick_reply() -> QuickReply:
     return QuickReply(
         items=[
             QuickReplyButton(action=MessageAction(label="是", text="是")),
             QuickReplyButton(action=MessageAction(label="否", text="否")),
+            _cancel_button(),
         ]
     )
 
@@ -106,12 +111,12 @@ def _get_session(event: MessageEvent) -> Optional[Session]:
 
 
 def _build_quick_reply(options: Sequence[str]) -> QuickReply:
-    return QuickReply(
-        items=[
-            QuickReplyButton(action=MessageAction(label=item, text=item))
-            for item in options
-        ]
-    )
+    items = [
+        QuickReplyButton(action=MessageAction(label=item, text=item))
+        for item in options
+    ]
+    items.append(_cancel_button())
+    return QuickReply(items=items)
 
 
 def _start_session(event: MessageEvent, line_bot_api: LineBotApi) -> None:
@@ -160,6 +165,7 @@ def _prompt_photo(event: MessageEvent, line_bot_api: LineBotApi) -> None:
         items=[
             QuickReplyButton(action=CameraAction(label="拍照")),
             QuickReplyButton(action=CameraRollAction(label="相簿")),
+            _cancel_button(),
         ]
     )
     line_bot_api.reply_message(
@@ -182,6 +188,7 @@ def _prompt_location(
     quick_reply = QuickReply(
         items=[
             QuickReplyButton(action=LocationAction(label="分享位置")),
+            _cancel_button(),
         ]
     )
     if session.location_prompted and not force:

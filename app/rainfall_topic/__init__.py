@@ -21,6 +21,7 @@ from ..rainfall_service.models import StationObservation
 
 CHECK_RAINFALL_TOPIC = "Check rainfall"
 _TRIGGERS = {"查雨量", "雨量站", "查詢雨量", "下雨嗎"}
+_CANCEL_KEYWORDS = {"取消雨量查詢", "取消", "結束", "退出"}
 _MODE_LABELS = {
     "雨量查詢：座標": "coordinate",
     "雨量查詢：測站": "station",
@@ -36,6 +37,10 @@ class Session:
 
 
 _SESSIONS: Dict[str, Session] = {}
+
+
+def _cancel_button() -> QuickReplyButton:
+    return QuickReplyButton(action=MessageAction(label="取消", text="取消"))
 
 
 def _source_key(event: MessageEvent) -> str:
@@ -56,6 +61,7 @@ def _build_entry_message() -> TextSendMessage:
             for label in _MODE_LABELS
         ]
     )
+    quick_reply.items.append(_cancel_button())
     return TextSendMessage(
         text="請選擇要查詢雨量的方式，可以依照座標、測站名稱或行政區查詢。",
         quick_reply=quick_reply,
@@ -66,7 +72,7 @@ def _coordinate_prompt() -> TextSendMessage:
     quick_reply = QuickReply(
         items=[
             QuickReplyButton(action=LocationAction(label="分享位置")),
-            QuickReplyButton(action=MessageAction(label="取消", text="取消雨量查詢")),
+            _cancel_button(),
         ]
     )
     return TextSendMessage(
@@ -76,12 +82,16 @@ def _coordinate_prompt() -> TextSendMessage:
 
 
 def _station_prompt() -> TextSendMessage:
-    return TextSendMessage(text="請輸入測站名稱或測站代碼，例如：建安國小 或 81AI10。")
-
+    return TextSendMessage(
+        text="請輸入測站名稱或測站代號，例如：建安國小 或 81AI10。",
+        quick_reply=QuickReply(items=[_cancel_button()]),
+    )
 
 def _district_prompt() -> TextSendMessage:
-    return TextSendMessage(text="請輸入縣市與行政區，例如：新北市 新店區。只輸入縣市也可以。")
-
+    return TextSendMessage(
+        text="請輸入縣市與行政區，例如：新北市 新店區。只輸入縣市也可以。",
+        quick_reply=QuickReply(items=[_cancel_button()]),
+    )
 
 def _set_session(key: str, session: Optional[Session]) -> None:
     if session is None:
@@ -203,9 +213,10 @@ def handle_message_event(event: MessageEvent, line_bot_api: LineBotApi) -> bool:
         )
         return True
 
-    if incoming_text == "取消雨量查詢":
+    if incoming_text in _CANCEL_KEYWORDS:
         if _SESSIONS.pop(source, None):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="已取消雨量查詢。"))
+            set_topic(None)
             return True
         return False
 

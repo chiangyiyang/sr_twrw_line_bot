@@ -32,7 +32,7 @@ _MODE_LABELS = {
     "CCTV查詢：名稱": "name",
     "CCTV查詢：行政區": "district",
 }
-_CANCEL_KEYWORDS = {"取消","取消CCTV查詢", "取消監視器查詢", "結束CCTV查詢", "退出CCTV查詢"}
+_CANCEL_KEYWORDS = {"取消", "結束", "退出", "取消CCTV查詢", "取消監視器查詢", "結束CCTV查詢", "退出CCTV查詢"}
 _COORD_PATTERN = re.compile(r"[-+]?\d+(?:\.\d+)?")
 _CLEAN_PATTERN = re.compile(r"[^\w\u4e00-\u9fff]+")
 _AREA_PATTERN = re.compile(r"[\u4e00-\u9fff]{1,6}[市縣區鄉鎮里村]")
@@ -63,6 +63,10 @@ class CCTVEntry:
 
 
 _SESSIONS: Dict[str, Session] = {}
+
+
+def _cancel_button() -> QuickReplyButton:
+    return QuickReplyButton(action=MessageAction(label="取消", text="取消"))
 
 
 def _normalize_for_match(text: str) -> str:
@@ -174,6 +178,7 @@ def _build_entry_message() -> TextSendMessage:
             for label in _MODE_LABELS
         ]
     )
+    quick_reply.items.append(_cancel_button())
     return TextSendMessage(text="請選擇要查詢 CCTV 的方式。", quick_reply=quick_reply)
 
 
@@ -181,7 +186,7 @@ def _coordinate_prompt() -> TextSendMessage:
     quick_reply = QuickReply(
         items=[
             QuickReplyButton(action=LocationAction(label="分享位置")),
-            QuickReplyButton(action=MessageAction(label="取消", text="取消CCTV查詢")),
+            _cancel_button(),
         ]
     )
     return TextSendMessage(text="請輸入經緯度（例如 121.446,24.925），或直接分享位置。", quick_reply=quick_reply)

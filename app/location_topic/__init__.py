@@ -349,6 +349,13 @@ def _start_distance_mode(event: MessageEvent, line_bot_api: LineBotApi) -> None:
         _clear_session(event)
         return
     messages = _build_line_selection_messages()
+    cancel_message = TextSendMessage(
+        text="若要取消查詢請點下方按鈕或輸入「取消」。",
+        quick_reply=QuickReply(
+            items=[QuickReplyButton(action=MessageAction(label="取消", text="取消"))]
+        ),
+    )
+    messages.append(cancel_message)
     line_bot_api.reply_message(event.reply_token, messages)
 
 

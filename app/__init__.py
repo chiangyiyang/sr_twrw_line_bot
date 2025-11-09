@@ -133,6 +133,7 @@ def handle_text_message(event: MessageEvent):
                 QuickReplyButton(action=MessageAction(label="座標轉里程", text="座標轉里程")),
                 QuickReplyButton(action=MessageAction(label="CCTV", text="CCTV")),
                 QuickReplyButton(action=MessageAction(label="回報事件", text="回報事件")),
+                QuickReplyButton(action=MessageAction(label="取消", text="取消")),
             ]
         )
         line_bot_api.reply_message(
