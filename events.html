@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+  <meta charset="utf-8" />
+  <title>事件回報分佈圖</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin="" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <style>
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      font-family: system-ui, 'Noto Sans TC', sans-serif;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+
+    .topbar {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 1000;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 12px 16px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+    }
+
+    .topbar h1 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .topbar button {
+      margin-top: 8px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: none;
+      background: #1c90ff;
+      color: #fff;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .status-box {
+      position: absolute;
+      right: 10px;
+      bottom: 10px;
+      z-index: 1000;
+      background: rgba(255, 255, 255, 0.95);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="topbar">
+    <h1>事件回報分佈圖</h1>
+    <div>本地圖顯示近期 LINE 回報的災情事件。</div>
+    <button id="btnReload">重新載入資料</button>
+  </div>
+  <div id="map"></div>
+  <div class="status-box" id="status">載入中...</div>
+
+  <script>
+    const map = L.map('map', { zoomControl: false }).setView([23.7, 120.9], 7);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    const markers = L.markerClusterGroup();
+    map.addLayer(markers);
+
+    function setStatus(text) {
+      document.getElementById('status').textContent = text;
+    }
+
+    function toPopup(item) {
+      const lines = [
+        `<strong>${item.event_type}｜${item.route_line}｜${item.track_side}</strong>`,
+        `里程：${item.mileage_text || '-'}`,
+      ];
+      if (typeof item.longitude === 'number' && typeof item.latitude === 'number') {
+        lines.push(`座標：${item.longitude.toFixed(5)}, ${item.latitude.toFixed(5)}`);
+      }
+      if (item.location_title || item.location_address) {
+        const desc = [item.location_title, item.location_address].filter(Boolean).join(' / ');
+        lines.push(`描述：${desc}`);
+      }
+      if (item.created_at) {
+        lines.push(`回報時間：${item.created_at}`);
+      }
+      if (item.photo_filename) {
+        const photoUrl = `/events/pictures/${encodeURIComponent(item.photo_filename)}`;
+        lines.push(`
+          <a href="${photoUrl}" target="_blank" rel="noopener" style="display:block;margin-top:6px;">
+            <img src="${photoUrl}" alt="事件照片" style="width:100%;height:auto;max-width:400px;max-height:300px;display:block;margin:0 auto;border-radius:6px;" />
+          </a>
+        `);
+      }
+      return lines.join('<br>');
+    }
+
+    function render(items) {
+      markers.clearLayers();
+      const hasItems = items.length > 0;
+      items.forEach(item => {
+        if (typeof item.latitude !== 'number' || typeof item.longitude !== 'number') {
+          return;
+        }
+        const marker = L.marker([item.latitude, item.longitude]).bindPopup(toPopup(item));
+        markers.addLayer(marker);
+      });
+      if (hasItems) {
+        const group = L.featureGroup(markers.getLayers());
+        map.fitBounds(group.getBounds().pad(0.1));
+      }
+      setStatus(`共 ${items.length} 筆事件（僅顯示有座標者）`);
+    }
+
+    async function loadEvents() {
+      try {
+        setStatus('載入資料中...');
+        const resp = await fetch('/api/events/?limit=1000', { cache: 'no-store' });
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+        const items = (data.items || []).filter(item => typeof item.longitude === 'number' && typeof item.latitude === 'number');
+        render(items);
+      } catch (err) {
+        console.error(err);
+        setStatus('載入資料失敗，請稍後再試');
+      }
+    }
+
+    document.getElementById('btnReload').addEventListener('click', loadEvents);
+    loadEvents();
+  </script>
+</body>
+
+</html>

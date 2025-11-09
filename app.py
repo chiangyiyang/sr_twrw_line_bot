@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
+    ImageMessage,
     LocationMessage,
     MessageAction,
     MessageEvent,
@@ -21,6 +22,8 @@ import check_cctv
 import check_rainfall
 import find_location
 import rainfall
+import report_event
+from report_event.api import api_bp as report_event_api_bp
 from demos import message_types, quick_replies, state
 
 
@@ -28,6 +31,7 @@ load_dotenv()
 
 app = Flask(__name__)
 rainfall.init_app(app)
+app.register_blueprint(report_event_api_bp)
 
 
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
@@ -63,6 +67,17 @@ def cctv_data():
     return send_from_directory(app.root_path, "cctv.json")
 
 
+@app.get("/events.html")
+def events_page():
+    return send_from_directory(app.root_path, "events.html")
+
+
+@app.get("/events/pictures/<path:filename>")
+def event_picture(filename: str):
+    pictures_dir = os.path.join(app.root_path, "events", "pictures")
+    return send_from_directory(pictures_dir, filename)
+
+
 @app.post("/callback")
 def callback():
     signature = request.headers.get("X-Line-Signature", "")
@@ -94,6 +109,9 @@ def handle_text_message(event: MessageEvent):
     if find_location.handle_message_event(event, line_bot_api):
         return
 
+    if report_event.handle_message_event(event, line_bot_api):
+        return
+
     if quick_replies.handle_message_event(event, line_bot_api):
         return
 
@@ -109,6 +127,7 @@ def handle_text_message(event: MessageEvent):
                 QuickReplyButton(action=MessageAction(label="里程轉座標", text="里程轉座標")),
                 QuickReplyButton(action=MessageAction(label="座標轉里程", text="座標轉里程")),
                 QuickReplyButton(action=MessageAction(label="CCTV", text="CCTV")),
+                QuickReplyButton(action=MessageAction(label="回報事件", text="回報事件")),
             ]
         )
         line_bot_api.reply_message(
@@ -136,6 +155,9 @@ def handle_location_message(event: MessageEvent):
     if line_bot_api is None:
         return
 
+    if report_event.handle_location_message(event, line_bot_api):
+        return
+
     if check_rainfall.handle_location_message(event, line_bot_api):
         return
 
@@ -143,6 +165,15 @@ def handle_location_message(event: MessageEvent):
         return
 
     if find_location.handle_location_message(event, line_bot_api):
+        return
+
+
+@handler.add(MessageEvent, message=ImageMessage)
+def handle_image_message(event: MessageEvent):
+    if line_bot_api is None:
+        return
+
+    if report_event.handle_image_message(event, line_bot_api):
         return
 
 
