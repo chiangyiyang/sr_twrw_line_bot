@@ -249,7 +249,7 @@ def _reply_with_entries(
             TextSendMessage(text=link_text),
         ],
     )
-    set_topic(CHECK_CCTV_TOPIC)
+    set_topic(None)
 
 
 def _ensure_data_ready(event: MessageEvent, line_bot_api: LineBotApi) -> bool:
