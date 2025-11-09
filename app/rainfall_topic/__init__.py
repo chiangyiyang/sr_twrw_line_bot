@@ -164,6 +164,7 @@ def _handle_coordinate_query(event: MessageEvent, line_bot_api: LineBotApi, long
     items = repository.search_nearest_by_coordinate(longitude, latitude, limit=3)
     _reply_with_results(event, line_bot_api, items)
     _set_session(_source_key(event), None)
+    set_topic(None)
     return True
 
 
@@ -171,6 +172,7 @@ def _handle_station_query(event: MessageEvent, line_bot_api: LineBotApi, keyword
     items = repository.search_by_station_name(keyword, limit=5)
     _reply_with_results(event, line_bot_api, items)
     _set_session(_source_key(event), None)
+    set_topic(None)
     return True
 
 
@@ -184,6 +186,7 @@ def _handle_district_query(event: MessageEvent, line_bot_api: LineBotApi, text: 
     items = repository.search_by_district(city, town, limit=20)
     _reply_with_results(event, line_bot_api, items)
     _set_session(_source_key(event), None)
+    set_topic(None)
     return True
 
 

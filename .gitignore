@@ -5,6 +5,10 @@
 .vscode
 
 storage/events/pictures/
+app/*.db
+app/*.db-shm
+app/*.db-wal
+
 data/*.db
 data/*.db-shm
 data/*.db-wal
