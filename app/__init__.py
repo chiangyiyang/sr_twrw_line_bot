@@ -24,7 +24,8 @@ from . import location_topic
 from . import rainfall_service
 from . import event_report_topic
 from .event_report_topic.api import api_bp as report_event_api_bp
-from .demos import message_types, quick_replies, state
+from .demos import message_types, quick_replies
+from . import state
 from .paths import STATIC_DIR, DATA_DIR, EVENT_PICTURES_DIR
 
 
@@ -99,6 +100,17 @@ def callback():
     return "OK"
 
 
+def _source_key(event: MessageEvent) -> str:
+    source = event.source
+    if getattr(source, "user_id", None):
+        return f"user:{source.user_id}"
+    if getattr(source, "group_id", None):
+        return f"group:{source.group_id}"
+    if getattr(source, "room_id", None):
+        return f"room:{source.room_id}"
+    return "unknown"
+
+
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event: MessageEvent):
     print(f"Received message: {event.message.text}")
@@ -123,8 +135,9 @@ def handle_text_message(event: MessageEvent):
     if message_types.handle_message_event(event, line_bot_api):
         return
 
-    current_topic = state.get_topic()
-    state.set_topic(None)
+    source_key = _source_key(event)
+    current_topic = state.get_topic(source_key)
+    state.set_topic(source_key, None)
     if current_topic is None:
         helper_quick_reply = QuickReply(
             items=[

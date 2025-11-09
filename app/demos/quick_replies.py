@@ -20,11 +20,22 @@ from linebot.models import (
     URIAction,
 )
 
-from .state import get_topic, set_topic
+from .. import state
 
 
 DEMO_QUICK_REPLY_TOPIC = "Demo quick replies"
 DEMO_QUICK_REPLY_TOPIC_KEY = "demo_quick_replies"
+
+
+def _source_key(event: MessageEvent) -> str:
+    source = event.source
+    if getattr(source, "user_id", None):
+        return f"user:{source.user_id}"
+    if getattr(source, "group_id", None):
+        return f"group:{source.group_id}"
+    if getattr(source, "room_id", None):
+        return f"room:{source.room_id}"
+    return "unknown"
 
 _QUICK_REPLY_ITEMS = [
     {
@@ -110,16 +121,17 @@ def build_quick_reply_message() -> TextSendMessage:
 def handle_message_event(event: MessageEvent, line_bot_api: LineBotApi) -> bool:
     """Handle text messages related to the quick reply demo."""
     incoming_text = (event.message.text or "").strip()
+    source = _source_key(event)
 
     if incoming_text == DEMO_QUICK_REPLY_TOPIC:
-        set_topic(DEMO_QUICK_REPLY_TOPIC)
+        state.set_topic(source, DEMO_QUICK_REPLY_TOPIC)
         line_bot_api.reply_message(
             event.reply_token,
             build_quick_reply_message(),
         )
         return True
 
-    if get_topic() != DEMO_QUICK_REPLY_TOPIC:
+    if state.get_topic(source) != DEMO_QUICK_REPLY_TOPIC:
         return False
 
     if incoming_text in _MESSAGE_ACTION_RESPONSES:
@@ -145,7 +157,8 @@ def handle_postback_event(event: PostbackEvent, line_bot_api: LineBotApi) -> boo
     if topic != DEMO_QUICK_REPLY_TOPIC_KEY or not choice:
         return False
 
-    set_topic(DEMO_QUICK_REPLY_TOPIC)
+    source = _source_key(event)
+    state.set_topic(source, DEMO_QUICK_REPLY_TOPIC)
 
     base_text = _POSTBACK_RESPONSE_BY_CHOICE.get(choice, f"您選擇了 {choice}")
     time_suffix = ""

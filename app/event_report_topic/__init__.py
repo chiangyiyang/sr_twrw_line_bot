@@ -23,7 +23,7 @@ from linebot.models import (
     TextSendMessage,
 )
 
-from ..demos.state import get_topic, set_topic
+from .. import state
 from . import repository
 from .models import ReportEventRecord
 from .public import get_public_page_url
@@ -123,7 +123,7 @@ def _start_session(event: MessageEvent, line_bot_api: LineBotApi) -> None:
     key = _source_key(event)
     session = Session(stage="event_type")
     _set_session(key, session)
-    set_topic(REPORT_EVENT_TOPIC)
+    state.set_topic(key, REPORT_EVENT_TOPIC)
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(
@@ -353,8 +353,9 @@ def _handle_confirmation(event: MessageEvent, session: Session, incoming_text: s
             source_id=_resolve_source_id(event),
         )
         repository.save_report(record)
-        _set_session(_source_key(event), None)
-        set_topic(None)
+        key = _source_key(event)
+        _set_session(key, None)
+        state.set_topic(key, None)
         page_url = get_public_page_url()
         line_bot_api.reply_message(
             event.reply_token,
@@ -365,8 +366,9 @@ def _handle_confirmation(event: MessageEvent, session: Session, incoming_text: s
         return True
 
     if normalized in _CONFIRM_NO_TOKENS:
-        _set_session(_source_key(event), None)
-        set_topic(None)
+        key = _source_key(event)
+        _set_session(key, None)
+        state.set_topic(key, None)
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text="已取消此次回報，如需重新填寫可再次輸入「回報事件」。"),
@@ -407,8 +409,9 @@ def _resolve_source_id(event: MessageEvent) -> Optional[str]:
 def _handle_cancel(event: MessageEvent, line_bot_api: LineBotApi) -> bool:
     if _get_session(event) is None:
         return False
-    _set_session(_source_key(event), None)
-    set_topic(None)
+    key = _source_key(event)
+    _set_session(key, None)
+    state.set_topic(key, None)
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(text="已取消事件回報。"),
@@ -431,7 +434,7 @@ def handle_message_event(event: MessageEvent, line_bot_api: LineBotApi) -> bool:
         return True
 
     session = _get_session(event)
-    if session is None or get_topic() != REPORT_EVENT_TOPIC:
+    if session is None or state.get_topic(_source_key(event)) != REPORT_EVENT_TOPIC:
         return False
 
     if session.stage == "event_type":

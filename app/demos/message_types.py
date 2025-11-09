@@ -27,10 +27,21 @@ from linebot.models import (
     VideoSendMessage,
 )
 
-from .state import get_topic, set_topic
+from .. import state
 
 
 DEMO_MESSAGE_TYPES_TOPIC = "Demo message types"
+
+
+def _source_key(event: MessageEvent) -> str:
+    source = event.source
+    if getattr(source, "user_id", None):
+        return f"user:{source.user_id}"
+    if getattr(source, "group_id", None):
+        return f"group:{source.group_id}"
+    if getattr(source, "room_id", None):
+        return f"room:{source.room_id}"
+    return "unknown"
 
 
 def _intro_text(message: str) -> TextSendMessage:
@@ -408,16 +419,17 @@ def build_message_types_quick_reply() -> TextSendMessage:
 def handle_message_event(event: MessageEvent, line_bot_api: LineBotApi) -> bool:
     """Handle text messages related to the message type demo."""
     incoming_text = (event.message.text or "").strip()
+    source = _source_key(event)
 
     if incoming_text == DEMO_MESSAGE_TYPES_TOPIC:
-        set_topic(DEMO_MESSAGE_TYPES_TOPIC)
+        state.set_topic(source, DEMO_MESSAGE_TYPES_TOPIC)
         line_bot_api.reply_message(
             event.reply_token,
             build_message_types_quick_reply(),
         )
         return True
 
-    if get_topic() != DEMO_MESSAGE_TYPES_TOPIC:
+    if state.get_topic(source) != DEMO_MESSAGE_TYPES_TOPIC:
         return False
 
     builder = _OPTION_BUILDERS.get(incoming_text)
@@ -425,6 +437,6 @@ def handle_message_event(event: MessageEvent, line_bot_api: LineBotApi) -> bool:
         return False
 
     messages = builder()
-    set_topic(DEMO_MESSAGE_TYPES_TOPIC)
+    state.set_topic(source, DEMO_MESSAGE_TYPES_TOPIC)
     line_bot_api.reply_message(event.reply_token, messages)
     return True

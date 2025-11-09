@@ -24,7 +24,7 @@ from linebot.models import (
     TextSendMessage,
 )
 
-from ..demos.state import get_topic, set_topic
+from .. import state
 from ..paths import RAILWAY_DATA_PATH
 
 
@@ -326,14 +326,16 @@ def _get_session(event: MessageEvent) -> Optional[SessionState]:
     return _SESSIONS.get(_source_key(event))
 
 
-def _set_session(event: MessageEvent, state: SessionState) -> None:
-    _SESSIONS[_source_key(event)] = state
-    set_topic(FIND_LOCATION_TOPIC)
+def _set_session(event: MessageEvent, session_state: SessionState) -> None:
+    source = _source_key(event)
+    _SESSIONS[source] = session_state
+    state.set_topic(source, FIND_LOCATION_TOPIC)
 
 
 def _clear_session(event: MessageEvent) -> None:
-    _SESSIONS.pop(_source_key(event), None)
-    set_topic(None)
+    source = _source_key(event)
+    _SESSIONS.pop(source, None)
+    state.set_topic(source, None)
 
 
 def _start_distance_mode(event: MessageEvent, line_bot_api: LineBotApi) -> None:
@@ -519,6 +521,7 @@ def handle_message_event(event: MessageEvent, line_bot_api: LineBotApi) -> bool:
         return False
 
     normalized = incoming_text.replace(" ", "")
+    source = _source_key(event)
 
     if normalized in _CANCEL_KEYWORDS:
         if _get_session(event):
@@ -542,7 +545,7 @@ def handle_message_event(event: MessageEvent, line_bot_api: LineBotApi) -> bool:
     if session is None:
         return False
 
-    if get_topic() != FIND_LOCATION_TOPIC:
+    if state.get_topic(source) != FIND_LOCATION_TOPIC:
         return False
 
     if session.mode == "distance_to_coordinates":

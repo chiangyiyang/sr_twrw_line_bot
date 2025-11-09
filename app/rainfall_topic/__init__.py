@@ -15,7 +15,7 @@ from linebot.models import (
     QuickReplyButton,
     TextSendMessage,
 )
-from ..demos.state import get_topic, set_topic
+from .. import state
 from ..rainfall_service import get_public_page_url, repository
 from ..rainfall_service.models import StationObservation
 
@@ -171,22 +171,25 @@ def _reply_with_results(event: MessageEvent, line_bot_api: LineBotApi, items: Li
 
 
 def _handle_coordinate_query(event: MessageEvent, line_bot_api: LineBotApi, longitude: float, latitude: float) -> bool:
+    source = _source_key(event)
     items = repository.search_nearest_by_coordinate(longitude, latitude, limit=3)
     _reply_with_results(event, line_bot_api, items)
-    _set_session(_source_key(event), None)
-    set_topic(None)
+    _set_session(source, None)
+    state.set_topic(source, None)
     return True
 
 
 def _handle_station_query(event: MessageEvent, line_bot_api: LineBotApi, keyword: str) -> bool:
+    source = _source_key(event)
     items = repository.search_by_station_name(keyword, limit=5)
     _reply_with_results(event, line_bot_api, items)
-    _set_session(_source_key(event), None)
-    set_topic(None)
+    _set_session(source, None)
+    state.set_topic(source, None)
     return True
 
 
 def _handle_district_query(event: MessageEvent, line_bot_api: LineBotApi, text: str) -> bool:
+    source = _source_key(event)
     sanitized = re.split(r"[\s,，]+", text.strip(), maxsplit=1)
     if not sanitized or not sanitized[0]:
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="請輸入縣市或縣市＋行政區。"))
@@ -195,8 +198,8 @@ def _handle_district_query(event: MessageEvent, line_bot_api: LineBotApi, text: 
     town = sanitized[1] if len(sanitized) > 1 else None
     items = repository.search_by_district(city, town, limit=20)
     _reply_with_results(event, line_bot_api, items)
-    _set_session(_source_key(event), None)
-    set_topic(None)
+    _set_session(source, None)
+    state.set_topic(source, None)
     return True
 
 
@@ -205,7 +208,7 @@ def handle_message_event(event: MessageEvent, line_bot_api: LineBotApi) -> bool:
     source = _source_key(event)
 
     if incoming_text in _TRIGGERS:
-        set_topic(CHECK_RAINFALL_TOPIC)
+        state.set_topic(source, CHECK_RAINFALL_TOPIC)
         _set_session(source, None)
         line_bot_api.reply_message(
             event.reply_token,
@@ -216,12 +219,12 @@ def handle_message_event(event: MessageEvent, line_bot_api: LineBotApi) -> bool:
     if incoming_text in _CANCEL_KEYWORDS:
         if _SESSIONS.pop(source, None):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="已取消雨量查詢。"))
-            set_topic(None)
+            state.set_topic(source, None)
             return True
         return False
 
     if incoming_text in _MODE_LABELS:
-        set_topic(CHECK_RAINFALL_TOPIC)
+        state.set_topic(source, CHECK_RAINFALL_TOPIC)
         mode = _MODE_LABELS[incoming_text]
         session = Session(mode=mode, stage="awaiting_input")
         _set_session(source, session)
@@ -233,7 +236,7 @@ def handle_message_event(event: MessageEvent, line_bot_api: LineBotApi) -> bool:
             line_bot_api.reply_message(event.reply_token, _district_prompt())
         return True
 
-    if get_topic() != CHECK_RAINFALL_TOPIC:
+    if state.get_topic(source) != CHECK_RAINFALL_TOPIC:
         return False
 
     session = _SESSIONS.get(source)

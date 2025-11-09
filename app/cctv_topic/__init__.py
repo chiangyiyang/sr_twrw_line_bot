@@ -21,7 +21,7 @@ from linebot.models import (
     TextSendMessage,
 )
 
-from ..demos.state import get_topic, set_topic
+from .. import state
 from ..paths import CCTV_DATA_PATH
 
 
@@ -254,7 +254,7 @@ def _reply_with_entries(
             TextSendMessage(text=link_text),
         ],
     )
-    set_topic(None)
+    state.set_topic(_source_key(event), None)
 
 
 def _ensure_data_ready(event: MessageEvent, line_bot_api: LineBotApi) -> bool:
@@ -403,7 +403,7 @@ def handle_message_event(event: MessageEvent, line_bot_api: LineBotApi) -> bool:
     source = _source_key(event)
 
     if incoming_text in _TRIGGERS:
-        set_topic(CHECK_CCTV_TOPIC)
+        state.set_topic(source, CHECK_CCTV_TOPIC)
         _SESSIONS.pop(source, None)
         line_bot_api.reply_message(event.reply_token, _build_entry_message())
         return True
@@ -411,12 +411,12 @@ def handle_message_event(event: MessageEvent, line_bot_api: LineBotApi) -> bool:
     if incoming_text in _CANCEL_KEYWORDS:
         if _SESSIONS.pop(source, None):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text="已取消 CCTV 查詢。"))
-            set_topic(None)
+            state.set_topic(source, None)
             return True
         return False
 
     if incoming_text in _MODE_LABELS:
-        set_topic(CHECK_CCTV_TOPIC)
+        state.set_topic(source, CHECK_CCTV_TOPIC)
         session = Session(mode=_MODE_LABELS[incoming_text], stage="awaiting_input")
         _SESSIONS[source] = session
         if session.mode == "coordinate":
@@ -427,7 +427,7 @@ def handle_message_event(event: MessageEvent, line_bot_api: LineBotApi) -> bool:
             line_bot_api.reply_message(event.reply_token, _district_prompt())
         return True
 
-    if get_topic() != CHECK_CCTV_TOPIC:
+    if state.get_topic(source) != CHECK_CCTV_TOPIC:
         return False
 
     session = _SESSIONS.get(source)
