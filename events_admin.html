@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+  <meta charset="utf-8" />
+  <title>事件回報後台</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous" />
+  <style>
+    body {
+      padding: 20px;
+      font-family: system-ui, 'Noto Sans TC', sans-serif;
+      background: #f5f6f8;
+    }
+
+    .card {
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    }
+
+    .table-responsive {
+      max-height: 65vh;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.85rem;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(0, 0, 0, 0.1);
+      background: #fff;
+    }
+
+    th {
+      white-space: nowrap;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1050;
+    }
+
+    .modal-card {
+      background: #fff;
+      border-radius: 12px;
+      width: min(640px, 95vw);
+      max-height: 90vh;
+      overflow: auto;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+      padding: 24px;
+    }
+
+    .d-none {
+      display: none !important;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container-fluid">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+      <div>
+        <h1 class="h3 mb-0">事件回報後台</h1>
+        <small class="text-muted">管理 LINE 回報資料，支援分頁、篩選與維護操作。</small>
+      </div>
+      <div class="d-flex gap-2 mt-3 mt-md-0">
+        <button class="btn btn-primary" id="btnAdd">新增事件</button>
+        <div class="btn-group">
+          <button class="btn btn-outline-secondary" id="btnExportJson">匯出 JSON</button>
+          <button class="btn btn-outline-secondary" id="btnExportCsv">匯出 CSV</button>
+        </div>
+        <label class="btn btn-outline-secondary mb-0">
+          匯入(JSON/CSV)
+          <input type="file" id="importInput" hidden accept=".json,.csv" />
+        </label>
+        <button class="btn btn-outline-danger" id="btnBulkDelete" disabled>刪除選取</button>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-body">
+        <form class="row gy-2 gx-3 align-items-end" id="filterForm">
+          <div class="col-6 col-md-3">
+            <label class="form-label">事件類型</label>
+            <input type="text" class="form-control" name="event_type" placeholder="例如：土石滑落" />
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label">路線別</label>
+            <input type="text" class="form-control" name="route_line" placeholder="例如：平溪線" />
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label">邊別/正線</label>
+            <input type="text" class="form-control" name="track_side" placeholder="例如：東正線" />
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label">關鍵字</label>
+            <input type="text" class="form-control" name="keyword" placeholder="里程或地點" />
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label">起始時間</label>
+            <input type="datetime-local" class="form-control" name="start_time" />
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label">結束時間</label>
+            <input type="datetime-local" class="form-control" name="end_time" />
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label">是否有照片</label>
+            <select class="form-select" name="has_photo">
+              <option value="">不限</option>
+              <option value="true">有照片</option>
+              <option value="false">無照片</option>
+            </select>
+          </div>
+          <div class="col-6 col-md-3">
+            <label class="form-label">每頁筆數</label>
+            <select class="form-select" name="page_size" id="pageSizeSelect">
+              <option value="20">20 筆</option>
+              <option value="50">50 筆</option>
+            </select>
+          </div>
+          <div class="col-12 col-md-auto">
+            <button class="btn btn-primary" type="submit">套用篩選</button>
+            <button class="btn btn-outline-secondary ms-2" type="button" id="btnResetFilter">重設</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div class="status-pill">
+            <span id="statusCounts">共 0 筆</span>
+          </div>
+          <div class="btn-group" role="group" aria-label="Pagination controls">
+            <button class="btn btn-outline-secondary" id="btnPrev">&laquo; 上一頁</button>
+            <button class="btn btn-outline-secondary" id="btnNext">下一頁 &raquo;</button>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0" id="eventsTable">
+            <thead class="table-light">
+              <tr>
+                <th scope="col"><input type="checkbox" id="selectAll" /></th>
+                <th scope="col">ID</th>
+                <th scope="col">事件類型</th>
+                <th scope="col">路線別</th>
+                <th scope="col">邊別</th>
+                <th scope="col">里程</th>
+                <th scope="col">座標</th>
+                <th scope="col">回報時間</th>
+                <th scope="col">動作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td colspan="9" class="text-center py-5 text-muted">
+                  讀取資料中...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop d-none" id="editModal">
+    <div class="modal-card">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="h5 mb-0" id="modalTitle">新增事件</h2>
+        <button type="button" class="btn-close" id="btnCloseModal"></button>
+      </div>
+      <form id="editForm" class="row g-3">
+        <input type="hidden" name="id" />
+        <div class="col-md-6">
+          <label class="form-label">事件類型 *</label>
+          <input type="text" class="form-control" name="event_type" required />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">路線別 *</label>
+          <input type="text" class="form-control" name="route_line" required />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">邊別/正線 *</label>
+          <input type="text" class="form-control" name="track_side" required />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">里程 K 值 *</label>
+          <input type="text" class="form-control" name="mileage_text" required />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">里程公尺</label>
+          <input type="number" step="1" class="form-control" name="mileage_meters" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">照片檔名</label>
+          <input type="text" class="form-control" name="photo_filename" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">經度</label>
+          <input type="text" pattern="^-?\d+(\.\d{1,6})?$" class="form-control" name="longitude" placeholder="例如 121.123456" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">緯度</label>
+          <input type="text" pattern="^-?\d+(\.\d{1,6})?$" class="form-control" name="latitude" placeholder="例如 24.123456" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">地點標題</label>
+          <input type="text" class="form-control" name="location_title" />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">地點地址</label>
+          <input type="text" class="form-control" name="location_address" />
+        </div>
+        <div class="col-12 d-flex justify-content-end gap-2">
+          <button type="button" class="btn btn-outline-secondary" id="btnCancelModal">取消</button>
+          <button type="submit" class="btn btn-primary">儲存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      page: 1,
+      pageSize: 20,
+      total: 0,
+      pages: 0,
+      selected: new Set(),
+      filters: {},
+    };
+
+    const tableBody = document.querySelector("#eventsTable tbody");
+    const statusCounts = document.getElementById("statusCounts");
+    const btnPrev = document.getElementById("btnPrev");
+    const btnNext = document.getElementById("btnNext");
+    const selectAll = document.getElementById("selectAll");
+    const btnBulkDelete = document.getElementById("btnBulkDelete");
+    const btnAdd = document.getElementById("btnAdd");
+    const editModal = document.getElementById("editModal");
+    const editForm = document.getElementById("editForm");
+    const modalTitle = document.getElementById("modalTitle");
+    const btnCloseModal = document.getElementById("btnCloseModal");
+    const btnCancelModal = document.getElementById("btnCancelModal");
+    let editingId = null;
+
+    function buildQuery(params) {
+      const searchParams = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== null && value !== undefined && value !== "") {
+          searchParams.append(key, value);
+        }
+      });
+      return searchParams.toString();
+    }
+
+    async function fetchEvents() {
+      const query = buildQuery({
+        page: state.page,
+        page_size: state.pageSize,
+        ...state.filters,
+      });
+      tableBody.innerHTML = `
+        <tr><td colspan="9" class="text-center py-5 text-muted">載入中...</td></tr>
+      `;
+      try {
+        const resp = await fetch(`/api/events/?${query}`);
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+        state.total = data.total;
+        state.pages = data.pages;
+        renderTable(data.items || []);
+        renderStatus();
+      } catch (err) {
+        tableBody.innerHTML = `
+          <tr><td colspan="9" class="text-center text-danger py-5">載入失敗：${err.message}</td></tr>
+        `;
+      }
+    }
+
+    function renderTable(items) {
+      if (!items.length) {
+        tableBody.innerHTML = `
+          <tr><td colspan="9" class="text-center py-5 text-muted">目前沒有資料。</td></tr>
+        `;
+        return;
+      }
+
+      tableBody.innerHTML = items.map((item) => {
+        const id = item.id;
+        const coord = item.longitude && item.latitude ? `${item.longitude.toFixed(5)}, ${item.latitude.toFixed(5)}` : "-";
+        const createdAt = item.created_at || "-";
+        const checked = state.selected.has(id) ? "checked" : "";
+        return `
+          <tr data-id="${id}">
+            <td><input type="checkbox" class="row-select" data-id="${id}" ${checked}></td>
+            <td>${id}</td>
+            <td>${item.event_type || "-"}</td>
+            <td>${item.route_line || "-"}</td>
+            <td>${item.track_side || "-"}</td>
+            <td>${item.mileage_text || "-"}</td>
+            <td>${coord}</td>
+            <td>${createdAt}</td>
+            <td>
+              <button class="btn btn-sm btn-outline-primary btn-edit" data-id="${id}">編輯</button>
+              <button class="btn btn-sm btn-outline-danger btn-delete" data-id="${id}">刪除</button>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function renderStatus() {
+      statusCounts.textContent = `共 ${state.total} 筆，第 ${state.page} / ${Math.max(state.pages, 1)} 頁`;
+      btnPrev.disabled = state.page <= 1;
+      btnNext.disabled = state.page >= state.pages;
+      btnBulkDelete.disabled = state.selected.size === 0;
+    }
+
+    document.getElementById("filterForm").addEventListener("submit", (evt) => {
+      evt.preventDefault();
+      const form = evt.currentTarget;
+      const formData = new FormData(form);
+      const filters = {};
+      formData.forEach((value, key) => {
+        filters[key] = value;
+      });
+      state.filters = filters;
+      state.pageSize = parseInt(filters.page_size || state.pageSize, 10);
+      state.page = 1;
+      state.selected.clear();
+      selectAll.checked = false;
+      fetchEvents();
+    });
+
+    document.getElementById("btnResetFilter").addEventListener("click", () => {
+      const form = document.getElementById("filterForm");
+      form.reset();
+      state.filters = {};
+      state.page = 1;
+      state.pageSize = 20;
+      state.selected.clear();
+      selectAll.checked = false;
+      fetchEvents();
+    });
+
+    btnPrev.addEventListener("click", () => {
+      if (state.page > 1) {
+        state.page -= 1;
+        fetchEvents();
+      }
+    });
+
+    btnNext.addEventListener("click", () => {
+      if (state.page < state.pages) {
+        state.page += 1;
+        fetchEvents();
+      }
+    });
+
+    selectAll.addEventListener("change", (evt) => {
+      const checked = evt.target.checked;
+      document.querySelectorAll(".row-select").forEach((input) => {
+        input.checked = checked;
+        const id = Number(input.dataset.id);
+        if (checked) {
+          state.selected.add(id);
+        } else {
+          state.selected.delete(id);
+        }
+      });
+      renderStatus();
+    });
+
+    tableBody.addEventListener("change", (evt) => {
+      if (evt.target.classList.contains("row-select")) {
+        const id = Number(evt.target.dataset.id);
+        if (evt.target.checked) {
+          state.selected.add(id);
+        } else {
+          state.selected.delete(id);
+        }
+        selectAll.checked = document.querySelectorAll(".row-select:checked").length === document.querySelectorAll(".row-select").length;
+        renderStatus();
+      }
+    });
+
+    async function deleteEvent(id) {
+      if (!confirm(`確定要刪除事件 ${id} 嗎？`)) return;
+      const resp = await fetch(`/api/events/${id}`, { method: "DELETE" });
+      if (!resp.ok) {
+        alert(`刪除失敗：${resp.status}`);
+        return;
+      }
+      state.selected.delete(id);
+      fetchEvents();
+    }
+
+    btnBulkDelete.addEventListener("click", async () => {
+      if (state.selected.size === 0) return;
+      if (!confirm(`確定刪除 ${state.selected.size} 筆選取資料？`)) return;
+      const resp = await fetch("/api/events/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(state.selected) }),
+      });
+      if (!resp.ok) {
+        alert(`批次刪除失敗：${resp.status}`);
+        return;
+      }
+      state.selected.clear();
+      selectAll.checked = false;
+      fetchEvents();
+    });
+
+    tableBody.addEventListener("click", (evt) => {
+      if (evt.target.classList.contains("btn-delete")) {
+        const id = Number(evt.target.dataset.id);
+        deleteEvent(id);
+      } else if (evt.target.classList.contains("btn-edit")) {
+        const id = Number(evt.target.dataset.id);
+        openEditModal(id);
+      }
+    });
+
+    async function handleExport(format) {
+      const query = buildQuery({ format, ...state.filters });
+      const resp = await fetch(`/api/events/export?${query}`);
+      if (!resp.ok) {
+        alert(`匯出失敗：${resp.status}`);
+        return;
+      }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = format === "csv" ? "reported_events.csv" : "reported_events.json";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+
+    document.getElementById("btnExportJson").addEventListener("click", () => handleExport("json"));
+    document.getElementById("btnExportCsv").addEventListener("click", () => handleExport("csv"));
+
+    async function handleImport(file) {
+      if (!file) return;
+      const format = file.name.endsWith(".csv") ? "csv" : "json";
+      const text = await file.text();
+      let body;
+      let headers = {};
+      if (format === "csv") {
+        body = text;
+        headers["Content-Type"] = "text/csv";
+      } else {
+        try {
+          body = JSON.stringify(JSON.parse(text));
+        } catch (err) {
+          alert("JSON 解析失敗");
+          return;
+        }
+        headers["Content-Type"] = "application/json";
+      }
+      const resp = await fetch(`/api/events/import?format=${format}`, {
+        method: "POST",
+        headers,
+        body,
+      });
+      if (!resp.ok) {
+        const msg = await resp.text();
+        alert(`匯入失敗：${msg}`);
+        return;
+      }
+      alert("匯入完成");
+      fetchEvents();
+    }
+
+    document.getElementById("importInput").addEventListener("change", (evt) => {
+      const [file] = evt.target.files || [];
+      handleImport(file);
+      evt.target.value = "";
+    });
+
+    function openModal(data) {
+      editingId = data?.id || null;
+      modalTitle.textContent = editingId ? `編輯事件 #${editingId}` : "新增事件";
+      const formData = new FormData(editForm);
+      formData.forEach((_, key) => {
+        if (key === "id") return;
+        editForm.elements[key].value = "";
+      });
+      if (editingId) {
+        editForm.elements.id.value = editingId;
+      } else {
+        editForm.elements.id.value = "";
+      }
+      if (data) {
+        Object.entries(data).forEach(([key, value]) => {
+          if (key in editForm.elements && editForm.elements[key]) {
+            editForm.elements[key].value = value ?? "";
+          }
+        });
+      }
+      editModal.classList.remove("d-none");
+    }
+
+    function closeModal() {
+      editModal.classList.add("d-none");
+      editingId = null;
+      editForm.reset();
+    }
+
+    async function openEditModal(id) {
+      const resp = await fetch(`/api/events/${id}`);
+      if (!resp.ok) {
+        alert(`讀取資料失敗：${resp.status}`);
+        return;
+      }
+      const data = await resp.json();
+      openModal(data);
+    }
+
+    btnAdd.addEventListener("click", () => openModal());
+    btnCloseModal.addEventListener("click", closeModal);
+    btnCancelModal.addEventListener("click", closeModal);
+
+    editModal.addEventListener("click", (evt) => {
+      if (evt.target === editModal) {
+        closeModal();
+      }
+    });
+
+    editForm.addEventListener("submit", async (evt) => {
+      evt.preventDefault();
+      const form = evt.currentTarget;
+      const formData = new FormData(form);
+      const payload = {};
+      formData.forEach((value, key) => {
+        if (["id"].includes(key)) return;
+        if (value === "") {
+          payload[key] = null;
+        } else if (key === "mileage_meters") {
+          payload[key] = Number(value);
+        } else if (["longitude", "latitude"].includes(key)) {
+          payload[key] = Number(Number(value).toFixed(6));
+        } else {
+          payload[key] = value;
+        }
+      });
+      try {
+        const resp = await fetch(editingId ? `/api/events/${editingId}` : "/api/events/", {
+          method: editingId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok) {
+          const msg = await resp.text();
+          alert(`儲存失敗：${msg}`);
+          return;
+        }
+        closeModal();
+        fetchEvents();
+      } catch (err) {
+        alert(`儲存失敗：${err.message}`);
+      }
+    });
+
+    document.addEventListener("DOMContentLoaded", () => {
+      fetchEvents();
+    });
+  </script>
+</body>
+
+</html>

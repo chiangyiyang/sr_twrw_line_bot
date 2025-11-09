@@ -78,6 +78,11 @@ def event_picture(filename: str):
     return send_from_directory(pictures_dir, filename)
 
 
+@app.get("/events_admin.html")
+def events_admin_page():
+    return send_from_directory(app.root_path, "events_admin.html")
+
+
 @app.post("/callback")
 def callback():
     signature = request.headers.get("X-Line-Signature", "")
