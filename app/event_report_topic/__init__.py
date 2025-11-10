@@ -28,6 +28,7 @@ from . import repository
 from .models import ReportEventRecord
 from .public import get_public_page_url
 from ..paths import EVENT_PICTURES_DIR
+from ..audit_log import record_action as audit_record_action
 
 
 REPORT_EVENT_TOPIC = "Report event"
@@ -353,6 +354,21 @@ def _handle_confirmation(event: MessageEvent, session: Session, incoming_text: s
             source_id=_resolve_source_id(event),
         )
         repository.save_report(record)
+        audit_record_action(
+            "events.reported_via_line",
+            channel="line",
+            actor_type=_resolve_source_type(event),
+            actor_id=_resolve_source_id(event),
+            resource_type="reported_event",
+            resource_id=str(record.id) if record.id else None,
+            metadata={
+                "event_type": record.event_type,
+                "route_line": record.route_line,
+                "track_side": record.track_side,
+                "mileage_text": record.mileage_text,
+                "has_photo": bool(record.photo_filename),
+            },
+        )
         key = _source_key(event)
         _set_session(key, None)
         state.set_topic(key, None)

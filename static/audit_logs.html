@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+  <meta charset="utf-8" />
+  <title>系統稽核日誌</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous" />
+  <style>
+    body {
+      padding: 20px;
+      font-family: system-ui, 'Noto Sans TC', sans-serif;
+      background: #f5f6f8;
+    }
+
+    .card {
+      border: none;
+      border-radius: 16px;
+      box-shadow: 0 8px 24px rgba(18, 23, 39, 0.08);
+      padding: 20px;
+      background: #fff;
+    }
+
+    .table-responsive {
+      max-height: 60vh;
+    }
+
+    .badge-pill {
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 0.8rem;
+    }
+
+    .filter-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .truncate {
+      max-width: 320px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .text-mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+      font-size: 0.85rem;
+    }
+
+    .d-none {
+      display: none !important;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container-fluid">
+    <div class="d-flex flex-wrap justify-content-between align-items-start mb-4">
+      <div>
+        <h1 class="h3 mb-1">系統稽核日誌</h1>
+        <p class="text-muted mb-0">瀏覽查核操作歷程、匯出資料或清除舊紀錄。</p>
+      </div>
+      <div class="text-end">
+        <div class="small text-muted">登入帳號</div>
+        <div id="authUser" class="fw-semibold">—</div>
+        <div class="mt-2">
+          <a class="btn btn-outline-secondary btn-sm" href="/events_admin.html">返回事件管理</a>
+          <button class="btn btn-outline-danger btn-sm" id="btnLogout">登出</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <form id="filterForm" class="mb-3">
+        <div class="filter-grid">
+          <div>
+            <label class="form-label">Action Type</label>
+            <input type="text" class="form-control form-control-sm" name="action_type" placeholder="如 events.update" />
+          </div>
+          <div>
+            <label class="form-label">Actor</label>
+            <input type="text" class="form-control form-control-sm" name="actor_id" placeholder="email 或 ID" />
+          </div>
+          <div>
+            <label class="form-label">Status</label>
+            <select class="form-select form-select-sm" name="status">
+              <option value="">全部</option>
+              <option value="success">success</option>
+              <option value="failure">failure</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Channel</label>
+            <select class="form-select form-select-sm" name="channel">
+              <option value="">全部</option>
+              <option value="http">http</option>
+              <option value="line">line</option>
+              <option value="system">system</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">資源鍵 (resource_id)</label>
+            <input type="text" class="form-control form-control-sm" name="resource_id" />
+          </div>
+          <div>
+            <label class="form-label">關鍵字</label>
+            <input type="text" class="form-control form-control-sm" name="keyword" placeholder="搜尋 message/details" />
+          </div>
+          <div>
+            <label class="form-label">起始時間</label>
+            <input type="datetime-local" class="form-control form-control-sm" name="start_time" />
+          </div>
+          <div>
+            <label class="form-label">結束時間</label>
+            <input type="datetime-local" class="form-control form-control-sm" name="end_time" />
+          </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+          <button class="btn btn-primary btn-sm" type="submit">查詢</button>
+          <button class="btn btn-outline-secondary btn-sm" type="button" id="btnResetFilters">清除條件</button>
+          <button class="btn btn-outline-success btn-sm" type="button" id="btnExportJson">匯出 JSON</button>
+          <button class="btn btn-outline-success btn-sm" type="button" id="btnExportCsv">匯出 CSV</button>
+        </div>
+      </form>
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead class="table-light">
+            <tr>
+              <th style="min-width: 150px;">時間</th>
+              <th>Action</th>
+              <th>狀態</th>
+              <th>Channel</th>
+              <th>Actor</th>
+              <th>資源</th>
+              <th>訊息</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody id="logTableBody">
+            <tr>
+              <td colspan="8" class="text-center text-muted py-4">尚未載入資料</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="d-flex justify-content-between align-items-center mt-3">
+        <div class="text-muted small" id="resultSummary">—</div>
+        <div class="btn-group">
+          <button class="btn btn-outline-secondary btn-sm" id="btnPrev">上一頁</button>
+          <button class="btn btn-outline-secondary btn-sm" id="btnNext">下一頁</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="h5 mb-3">清除日誌資料</h2>
+      <p class="text-muted small mb-3">此操作無法復原，建議僅清除已備份或超過保存政策的資料。</p>
+      <form id="clearForm" class="row gy-3">
+        <div class="col-md-4">
+          <label class="form-label">清除此時間（含）之前的資料</label>
+          <input type="datetime-local" class="form-control" name="before_time" />
+          <div class="form-text">留白表示刪除全部紀錄。</div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">確認字串</label>
+          <input type="text" class="form-control" name="confirm" placeholder="請輸入 DELETE" required />
+        </div>
+        <div class="col-md-4 d-flex align-items-end">
+          <button class="btn btn-danger" type="submit">清除日誌</button>
+        </div>
+      </form>
+      <div class="text-muted small mt-2">執行後仍會新增一筆稽核紀錄以記錄此刪除行為。</div>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      page: 1,
+      limit: 20,
+      totalPages: 1,
+      currentFilters: {},
+    };
+
+    function getFormData(form) {
+      const data = new FormData(form);
+      const result = {};
+      data.forEach((value, key) => {
+        if (!value) {
+          return;
+        }
+        if (key === "start_time" || key === "end_time" || key === "before_time") {
+          result[key] = new Date(value).toISOString();
+        } else {
+          result[key] = value;
+        }
+      });
+      return result;
+    }
+
+    function buildQuery(params) {
+      const search = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== "") {
+          search.set(key, value);
+        }
+      });
+      return search.toString();
+    }
+
+    async function ensureAuthenticated() {
+      try {
+        const resp = await fetch("/auth/status");
+        if (!resp.ok) {
+          throw new Error("status");
+        }
+        const data = await resp.json();
+        if (!data.authenticated) {
+          window.location.href = "/login.html";
+          return false;
+        }
+        const user = data.user || {};
+        document.getElementById("authUser").textContent = user.email || user.name || "已登入";
+        return true;
+      } catch (err) {
+        window.location.href = "/login.html";
+        return false;
+      }
+    }
+
+    function isUnauthorized(resp) {
+      if (resp.status === 401 || resp.status === 403) {
+        window.location.href = "/login.html";
+        return true;
+      }
+      return false;
+    }
+
+    function escapeHtml(value) {
+      if (value === undefined || value === null) return "";
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function renderRows(items) {
+      const tbody = document.getElementById("logTableBody");
+      if (!items.length) {
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">查無資料</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = items.map((item) => {
+        const statusBadge = item.status === "success"
+          ? `<span class="badge bg-success badge-pill">success</span>`
+          : `<span class="badge bg-danger badge-pill">${item.status || "—"}</span>`;
+        const actor = item.actor_id || item.actor_name || "—";
+        const resource = [item.resource_type, item.resource_id].filter(Boolean).join(" / ") || "—";
+        const detailsText = item.details
+          ? (typeof item.details === "string" ? item.details : JSON.stringify(item.details))
+          : "";
+        const details = detailsText
+          ? `<code class="text-mono truncate" title="${escapeHtml(detailsText)}">${escapeHtml(detailsText)}</code>`
+          : "—";
+        return `
+          <tr>
+            <td class="text-mono">${escapeHtml(item.created_at || "—")}</td>
+            <td>${escapeHtml(item.action_type || "—")}</td>
+            <td>${statusBadge}</td>
+            <td>${escapeHtml(item.channel || "—")}</td>
+            <td class="truncate" title="${escapeHtml(actor)}">${escapeHtml(actor)}</td>
+            <td class="truncate" title="${escapeHtml(resource)}">${escapeHtml(resource)}</td>
+            <td class="truncate" title="${escapeHtml(item.message || "")}">${escapeHtml(item.message || "—")}</td>
+            <td>${details}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    async function fetchLogs() {
+      const params = {
+        limit: state.limit,
+        page: state.page,
+        ...state.currentFilters,
+      };
+      const query = buildQuery(params);
+      const resp = await fetch(`/api/audit-logs/?${query}`);
+      if (!resp.ok) {
+        if (isUnauthorized(resp)) return;
+        throw new Error(await resp.text());
+      }
+      const data = await resp.json();
+      renderRows(data.items || []);
+      state.totalPages = data.pages || 1;
+      document.getElementById("resultSummary").textContent =
+        `第 ${data.page}/${state.totalPages} 頁，共 ${data.total} 筆`;
+      document.getElementById("btnPrev").disabled = state.page <= 1;
+      document.getElementById("btnNext").disabled = state.page >= state.totalPages;
+    }
+
+    function resetFilters(form) {
+      form.reset();
+      state.currentFilters = {};
+      state.page = 1;
+      fetchLogs();
+    }
+
+    function handleExport(format) {
+      const params = {
+        ...state.currentFilters,
+        format,
+      };
+      const query = buildQuery(params);
+      window.open(`/api/audit-logs/export?${query}`, "_blank");
+    }
+
+    document.getElementById("filterForm").addEventListener("submit", (evt) => {
+      evt.preventDefault();
+      state.currentFilters = getFormData(evt.currentTarget);
+      state.page = 1;
+      fetchLogs();
+    });
+
+    document.getElementById("btnResetFilters").addEventListener("click", () => {
+      const form = document.getElementById("filterForm");
+      resetFilters(form);
+    });
+
+    document.getElementById("btnPrev").addEventListener("click", () => {
+      if (state.page <= 1) return;
+      state.page -= 1;
+      fetchLogs();
+    });
+    document.getElementById("btnNext").addEventListener("click", () => {
+      if (state.page >= state.totalPages) return;
+      state.page += 1;
+      fetchLogs();
+    });
+
+    document.getElementById("btnExportJson").addEventListener("click", () => handleExport("json"));
+    document.getElementById("btnExportCsv").addEventListener("click", () => handleExport("csv"));
+
+    const clearForm = document.getElementById("clearForm");
+    clearForm.addEventListener("submit", async (evt) => {
+      evt.preventDefault();
+      const payload = getFormData(clearForm);
+      if (!payload.confirm) {
+        alert("請輸入 DELETE 以確認刪除");
+        return;
+      }
+      if (!window.confirm("確定要清除稽核日誌？此動作無法復原！")) {
+        return;
+      }
+      try {
+        const resp = await fetch("/api/audit-logs/clear", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok) {
+          if (isUnauthorized(resp)) return;
+          alert(await resp.text());
+          return;
+        }
+        const result = await resp.json();
+        alert(`已刪除 ${result.deleted || 0} 筆日誌。`);
+        clearForm.reset();
+        fetchLogs();
+      } catch (err) {
+        alert(`清除失敗：${err.message}`);
+      }
+    });
+
+    document.getElementById("btnLogout").addEventListener("click", async () => {
+      await fetch("/auth/logout", { method: "POST" });
+      window.location.href = "/login.html";
+    });
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      const ok = await ensureAuthenticated();
+      if (ok) {
+        fetchLogs();
+      }
+    });
+  </script>
+</body>
+
+</html>

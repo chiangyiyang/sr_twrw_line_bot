@@ -1,6 +1,6 @@
 import os
 import sys
-from typing import Set
+from typing import Any, Dict, Optional, Set
 
 from flask import Flask, abort, jsonify, request, send_from_directory
 from dotenv import load_dotenv
@@ -29,11 +29,13 @@ from .demos import message_types, quick_replies
 from . import state
 from .paths import STATIC_DIR, DATA_DIR, EVENT_PICTURES_DIR
 from .auth import auth_bp, login_required
+from .audit_log import init_app as audit_init_app, record_action as audit_record_action
 
 
 load_dotenv()
 
 app = Flask(__name__)
+audit_init_app(app)
 
 
 def _as_env_set(value: str | None) -> Set[str]:
@@ -107,6 +109,12 @@ def event_picture(filename: str):
 @login_required
 def events_admin_page():
     return send_from_directory(str(STATIC_DIR), "events_admin.html")
+
+
+@app.get("/audit_logs.html")
+@login_required
+def audit_logs_page():
+    return send_from_directory(str(STATIC_DIR), "audit_logs.html")
 
 
 @app.post("/callback")
@@ -187,28 +195,108 @@ def _source_key(event: MessageEvent) -> str:
     return "unknown"
 
 
+def _line_actor_info(event) -> tuple[str, Optional[str]]:
+    source = event.source
+    if getattr(source, "user_id", None):
+        return "user", source.user_id
+    if getattr(source, "group_id", None):
+        return "group", source.group_id
+    if getattr(source, "room_id", None):
+        return "room", source.room_id
+    return "unknown", None
+
+
+def _line_event_metadata(event) -> Dict[str, Any]:
+    metadata: Dict[str, Any] = {"event_type": getattr(event, "type", None)}
+    message = getattr(event, "message", None)
+    if message is not None:
+        metadata["message_type"] = getattr(message, "type", None)
+        message_id = getattr(message, "id", None)
+        if message_id:
+            metadata["message_id"] = message_id
+        text_value = getattr(message, "text", None)
+        if text_value:
+            metadata["text"] = text_value
+        if hasattr(message, "latitude") and hasattr(message, "longitude"):
+            metadata["latitude"] = getattr(message, "latitude", None)
+            metadata["longitude"] = getattr(message, "longitude", None)
+        title_value = getattr(message, "title", None)
+        if title_value:
+            metadata["title"] = title_value
+        address_value = getattr(message, "address", None)
+        if address_value:
+            metadata["address"] = address_value
+    postback = getattr(event, "postback", None)
+    if postback is not None:
+        metadata["postback_data"] = getattr(postback, "data", None)
+        metadata["postback_params"] = getattr(postback, "params", None)
+    metadata["reply_token"] = getattr(event, "reply_token", None)
+    return metadata
+
+
+def _record_line_event(
+    action_type: str,
+    event,
+    *,
+    status: str = "success",
+    message: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    actor_type, actor_id = _line_actor_info(event)
+    audit_metadata = _line_event_metadata(event)
+    if metadata:
+        audit_metadata.update(metadata)
+    resource_id = audit_metadata.get("message_id") or audit_metadata.get("reply_token")
+    audit_record_action(
+        action_type,
+        channel="line",
+        actor_type=actor_type,
+        actor_id=actor_id,
+        resource_type="line_event",
+        resource_id=resource_id,
+        status=status,
+        message=message,
+        metadata=audit_metadata,
+    )
+
+
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event: MessageEvent):
     print(f"Received message: {event.message.text}")
     if line_bot_api is None:
+        _record_line_event(
+            "line.text_message",
+            event,
+            status="failure",
+            message="LINE handler not configured",
+        )
         return
 
+    handled_by: Optional[str] = None
     if rainfall_topic.handle_message_event(event, line_bot_api):
-        return
+        handled_by = "rainfall_topic"
 
-    if cctv_topic.handle_message_event(event, line_bot_api):
-        return
+    elif cctv_topic.handle_message_event(event, line_bot_api):
+        handled_by = "cctv_topic"
 
-    if location_topic.handle_message_event(event, line_bot_api):
-        return
+    elif location_topic.handle_message_event(event, line_bot_api):
+        handled_by = "location_topic"
 
-    if event_report_topic.handle_message_event(event, line_bot_api):
-        return
+    elif event_report_topic.handle_message_event(event, line_bot_api):
+        handled_by = "event_report_topic"
 
-    if quick_replies.handle_message_event(event, line_bot_api):
-        return
+    elif quick_replies.handle_message_event(event, line_bot_api):
+        handled_by = "quick_replies"
 
-    if message_types.handle_message_event(event, line_bot_api):
+    elif message_types.handle_message_event(event, line_bot_api):
+        handled_by = "message_types"
+
+    if handled_by:
+        _record_line_event(
+            "line.text_message",
+            event,
+            metadata={"handled_by": handled_by},
+        )
         return
 
     source_key = _source_key(event)
@@ -234,42 +322,98 @@ def handle_text_message(event: MessageEvent):
             event.reply_token,
             TextSendMessage(text=(event.message.text or "")),
         )
+    _record_line_event(
+        "line.text_message",
+        event,
+        metadata={"handled_by": "fallback", "previous_topic": current_topic},
+    )
 
 
 @handler.add(PostbackEvent)
 def handle_postback_event(event: PostbackEvent):
     if line_bot_api is None:
+        _record_line_event(
+            "line.postback",
+            event,
+            status="failure",
+            message="LINE handler not configured",
+        )
         return
 
     if quick_replies.handle_postback_event(event, line_bot_api):
+        _record_line_event(
+            "line.postback",
+            event,
+            metadata={"handled_by": "quick_replies"},
+        )
         return
+
+    _record_line_event(
+        "line.postback",
+        event,
+        metadata={"handled_by": "unhandled"},
+    )
 
 
 @handler.add(MessageEvent, message=LocationMessage)
 def handle_location_message(event: MessageEvent):
     if line_bot_api is None:
+        _record_line_event(
+            "line.location_message",
+            event,
+            status="failure",
+            message="LINE handler not configured",
+        )
         return
 
+    handled_by: Optional[str] = None
     if event_report_topic.handle_location_message(event, line_bot_api):
-        return
+        handled_by = "event_report_topic"
+    elif rainfall_topic.handle_location_message(event, line_bot_api):
+        handled_by = "rainfall_topic"
+    elif cctv_topic.handle_location_message(event, line_bot_api):
+        handled_by = "cctv_topic"
+    elif location_topic.handle_location_message(event, line_bot_api):
+        handled_by = "location_topic"
 
-    if rainfall_topic.handle_location_message(event, line_bot_api):
-        return
-
-    if cctv_topic.handle_location_message(event, line_bot_api):
-        return
-
-    if location_topic.handle_location_message(event, line_bot_api):
-        return
+    if handled_by:
+        _record_line_event(
+            "line.location_message",
+            event,
+            metadata={"handled_by": handled_by},
+        )
+    else:
+        _record_line_event(
+            "line.location_message",
+            event,
+            metadata={"handled_by": "unhandled"},
+        )
 
 
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image_message(event: MessageEvent):
     if line_bot_api is None:
+        _record_line_event(
+            "line.image_message",
+            event,
+            status="failure",
+            message="LINE handler not configured",
+        )
         return
 
     if event_report_topic.handle_image_message(event, line_bot_api):
+        _record_line_event(
+            "line.image_message",
+            event,
+            metadata={"handled_by": "event_report_topic"},
+        )
         return
+
+    _record_line_event(
+        "line.image_message",
+        event,
+        metadata={"handled_by": "unhandled"},
+    )
 
 
 def main():

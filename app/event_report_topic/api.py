@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
-from flask import Blueprint, Response, abort, jsonify, request
+from flask import Blueprint, Response, abort, jsonify, request, session
 from werkzeug.utils import secure_filename
 
 from . import repository
@@ -19,6 +19,7 @@ from .models import ReportEventRecord
 from .photos import parse_photo_field, serialize_photo_field
 from ..paths import EVENT_PICTURES_DIR
 from ..auth import login_required
+from ..audit_log import record_action as audit_record_action
 
 api_bp = Blueprint("report_events_api", __name__, url_prefix="/api/events")
 
@@ -39,6 +40,47 @@ _CSV_FIELDS = (
     "source_id",
     "created_at",
 )
+
+
+def _request_ip() -> Optional[str]:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip() or None
+    return request.remote_addr
+
+
+def _current_actor() -> Optional[Dict[str, object]]:
+    user = session.get("user")
+    if not isinstance(user, dict):
+        return None
+    return {
+        "actor_type": "admin",
+        "actor_id": user.get("email") or user.get("sub"),
+        "actor_name": user.get("name"),
+        "email": user.get("email"),
+    }
+
+
+def _record_admin_event(
+    action_type: str,
+    *,
+    resource_type: Optional[str] = None,
+    resource_id: Optional[object] = None,
+    status: str = "success",
+    message: Optional[str] = None,
+    metadata: Optional[Dict[str, object]] = None,
+) -> None:
+    audit_record_action(
+        action_type,
+        channel="http",
+        actor=_current_actor(),
+        ip_address=_request_ip(),
+        resource_type=resource_type,
+        resource_id=str(resource_id) if resource_id is not None else None,
+        status=status,
+        message=message,
+        metadata=metadata,
+    )
 
 
 def _parse_int(value: Optional[str], default: int, minimum: int, maximum: int) -> int:
@@ -151,7 +193,19 @@ def create_event():
     except ValueError as exc:
         abort(400, description=str(exc))
     event = repository.create_event(cleaned)
-    return jsonify(event.to_dict()), 201
+    payload = event.to_dict()
+    _record_admin_event(
+        "events.create",
+        resource_type="reported_event",
+        resource_id=event.id,
+        metadata={
+            "event_id": event.id,
+            "event_type": payload.get("event_type"),
+            "route_line": payload.get("route_line"),
+            "track_side": payload.get("track_side"),
+        },
+    )
+    return jsonify(payload), 201
 
 
 @api_bp.put("/<int:event_id>")
@@ -173,7 +227,18 @@ def update_event(event_id: int):
     removed = [name for name in original.photo_filenames if name not in updated.photo_filenames]
     if removed:
         _delete_photo_filenames(removed)
-    return jsonify(updated.to_dict())
+    payload = updated.to_dict()
+    _record_admin_event(
+        "events.update",
+        resource_type="reported_event",
+        resource_id=event_id,
+        metadata={
+            "event_id": event_id,
+            "updated_fields": sorted(cleaned.keys()),
+            "removed_photos": removed,
+        },
+    )
+    return jsonify(payload)
 
 
 @api_bp.delete("/<int:event_id>")
@@ -184,6 +249,15 @@ def delete_event(event_id: int):
         abort(404, description="事件不存在")
     _delete_photo_files([event])
     repository.delete_event(event_id)
+    _record_admin_event(
+        "events.delete",
+        resource_type="reported_event",
+        resource_id=event_id,
+        metadata={
+            "event_id": event_id,
+            "had_photo": bool(event.photo_filenames),
+        },
+    )
     return jsonify({"deleted": 1})
 
 
@@ -197,6 +271,14 @@ def bulk_delete():
     events = repository.get_events_by_ids(ids)
     _delete_photo_files(events)
     deleted = repository.bulk_delete(ids)
+    _record_admin_event(
+        "events.bulk_delete",
+        resource_type="reported_event",
+        metadata={
+            "requested_ids": ids,
+            "deleted": deleted,
+        },
+    )
     return jsonify({"deleted": deleted})
 
 
@@ -225,8 +307,19 @@ def export_events():
     format_type = (request.args.get("format") or "json").lower()
     items = _serialize_items(repository.export_events(**filters))
     if format_type == "csv":
-        return _export_csv(items)
-    return _export_json(items)
+        response = _export_csv(items)
+    else:
+        response = _export_json(items)
+    _record_admin_event(
+        "events.export",
+        resource_type="reported_event",
+        metadata={
+            "format": format_type,
+            "filters": {k: v for k, v in filters.items() if v is not None},
+            "count": len(items),
+        },
+    )
+    return response
 
 
 def _parse_import_items(format_type: str) -> List[dict]:
@@ -266,6 +359,15 @@ def import_events():
         except ValueError as exc:
             abort(400, description=f"資料格式錯誤：{exc}")
     inserted = repository.import_events(cleaned_items)
+    _record_admin_event(
+        "events.import",
+        resource_type="reported_event",
+        metadata={
+            "format": format_type or request.content_type or "json",
+            "received": len(raw_items),
+            "inserted": inserted,
+        },
+    )
     return jsonify({"imported": inserted})
 
 
@@ -333,7 +435,7 @@ def _save_uploaded_photo(file_storage) -> str:
 def upload_photo():
     files = request.files.getlist("photos") or request.files.getlist("photo")
     if not files:
-        abort(400, description="請提供要上傳的圖片")
+        abort(400, description="??<????_>????,S?,3?s,?o-?%?")
     saved: List[str] = []
     for file_storage in files[:_MAX_UPLOAD_FILES]:
         try:
@@ -341,9 +443,13 @@ def upload_photo():
         except ValueError as exc:
             abort(400, description=str(exc))
     if not saved:
-        abort(400, description="未成功上傳任何圖片")
+        abort(400, description="?o??^??SY?,S?,3??????o-?%?")
+    _record_admin_event(
+        "events.photo.upload",
+        resource_type="event_photo",
+        metadata={"files": saved, "count": len(saved)},
+    )
     return jsonify({"files": saved})
-
 
 @api_bp.post("/delete-photo")
 @login_required
@@ -351,6 +457,12 @@ def delete_uploaded_photo():
     data = request.get_json(silent=True) or {}
     files = data.get("files")
     if not isinstance(files, list) or not all(isinstance(item, str) for item in files):
-        abort(400, description="files 需為字串陣列")
+        abort(400, description="files ?o??,??--?,??T??^-")
     deleted = _delete_photo_filenames(files)
+    _record_admin_event(
+        "events.photo.delete",
+        resource_type="event_photo",
+        metadata={"files": files, "deleted": deleted},
+    )
     return jsonify({"deleted": deleted})
+
