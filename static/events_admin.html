@@ -76,6 +76,63 @@
     .d-none {
       display: none !important;
     }
+
+    .photo-upload-card {
+      border: 1px dashed #d0d7de;
+      border-radius: 12px;
+      padding: 16px;
+      background: #fafbfc;
+    }
+
+    .photo-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .photo-card {
+      width: 110px;
+      height: 110px;
+      border-radius: 10px;
+      overflow: hidden;
+      position: relative;
+      border: 1px solid #e5e7eb;
+      background: #fff;
+    }
+
+    .photo-card img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .photo-card button {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      padding: 2px 6px;
+      line-height: 1;
+    }
+
+    .photo-name {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      font-size: 0.7rem;
+      background: rgba(0, 0, 0, 0.55);
+      color: #fff;
+      padding: 2px 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .photo-empty {
+      font-size: 0.9rem;
+      color: #6b7280;
+    }
   </style>
 </head>
 
@@ -223,9 +280,22 @@
           <label class="form-label">里程公尺</label>
           <input type="number" step="1" class="form-control" name="mileage_meters" />
         </div>
-        <div class="col-md-6">
-          <label class="form-label">照片檔名</label>
-          <input type="text" class="form-control" name="photo_filename" />
+        <div class="col-12">
+          <label class="form-label mb-1">照片</label>
+          <div class="photo-upload-card">
+            <div class="photo-grid" id="photoPreview">
+              <div class="photo-empty">尚未加入照片</div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+              <label class="btn btn-outline-primary mb-0">
+                上傳
+                <input type="file" id="photoUploadInput" hidden multiple accept="image/*" />
+              </label>
+              <button type="button" class="btn btn-outline-secondary" id="btnAddPhotoUrl">新增圖片連結</button>
+              <button type="button" class="btn btn-outline-secondary" id="btnClearPhotos">清除所有圖片</button>
+            </div>
+            <small class="text-muted d-block mt-2">支援多張圖片（單次最多 10 張），亦可輸入外部網址。</small>
+          </div>
         </div>
         <div class="col-md-6">
           <label class="form-label">經度</label>
@@ -275,11 +345,152 @@
     const btnCancelModal = document.getElementById("btnCancelModal");
     const authUserLabel = document.getElementById("authUser");
     const btnLogout = document.getElementById("btnLogout");
+    const photoPreview = document.getElementById("photoPreview");
+    const photoUploadInput = document.getElementById("photoUploadInput");
+    const btnAddPhotoUrl = document.getElementById("btnAddPhotoUrl");
+    const btnClearPhotos = document.getElementById("btnClearPhotos");
     let editingId = null;
+    let currentPhotos = [];
+    let newUploads = new Set();
+
+    function isLocalPhotoName(name) {
+      return typeof name === "string" && !/^https?:\/\//i.test(name);
+    }
+
+    async function requestDeletePhotos(names) {
+      if (!names || !names.length) return;
+      try {
+        const resp = await fetch("/api/events/delete-photo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ files: names }),
+        });
+        if (!resp.ok) {
+          if (isUnauthorized(resp)) return;
+          const msg = await resp.text();
+          console.warn("刪除暫存圖片失敗:", msg);
+        }
+      } catch (err) {
+        console.warn("刪除暫存圖片失敗:", err);
+      }
+    }
+
+    async function cleanupUnsavedUploads() {
+      if (!newUploads.size) return;
+      const names = Array.from(newUploads);
+      newUploads.clear();
+      await requestDeletePhotos(names);
+    }
+
+    function resolvePhotoUrl(name) {
+      if (!name) return "";
+      return /^https?:\/\//i.test(name) ? name : `/events/pictures/${encodeURIComponent(name)}`;
+    }
+
+    function renderPhotoPreview() {
+      if (!photoPreview) return;
+      if (!currentPhotos.length) {
+        photoPreview.innerHTML = '<div class="photo-empty">尚未加入照片</div>';
+        if (btnClearPhotos) {
+          btnClearPhotos.setAttribute("disabled", "disabled");
+        }
+        return;
+      }
+      photoPreview.innerHTML = currentPhotos
+        .map(
+          (name, index) => `
+          <div class="photo-card">
+            <img src="${resolvePhotoUrl(name)}" alt="事件照片 ${index + 1}" loading="lazy" />
+            <button type="button" class="btn btn-sm btn-danger btn-remove-photo" data-index="${index}" aria-label="移除照片">&times;</button>
+            <div class="photo-name" title="${name}">${name}</div>
+          </div>
+        `
+        )
+        .join("");
+      if (btnClearPhotos) {
+        btnClearPhotos.removeAttribute("disabled");
+      }
+    }
 
     function redirectToLogin() {
       window.location.replace("/login.html");
     }
+
+    if (photoPreview) {
+      photoPreview.addEventListener("click", async (evt) => {
+        const target = evt.target.closest(".btn-remove-photo");
+        if (!target) return;
+        const index = Number(target.dataset.index);
+        if (Number.isNaN(index)) return;
+        const [removed] = currentPhotos.splice(index, 1);
+        renderPhotoPreview();
+        if (removed && newUploads.has(removed) && isLocalPhotoName(removed)) {
+          newUploads.delete(removed);
+          await requestDeletePhotos([removed]);
+        }
+      });
+    }
+
+    if (photoUploadInput) {
+      photoUploadInput.addEventListener("change", async (evt) => {
+        const files = Array.from(evt.target.files || []);
+        if (!files.length) return;
+        const formData = new FormData();
+        files.forEach((file) => formData.append("photos", file));
+        try {
+          const resp = await fetch("/api/events/upload-photo", {
+            method: "POST",
+            body: formData,
+          });
+          if (!resp.ok) {
+            if (isUnauthorized(resp)) return;
+            const msg = await resp.text();
+            alert(`上傳照片失敗：${msg}`);
+            return;
+          }
+          const data = await resp.json();
+          const uploaded = Array.isArray(data.files) ? data.files : [];
+          if (uploaded.length) {
+            currentPhotos = currentPhotos.concat(uploaded);
+            uploaded.forEach((name) => {
+              if (isLocalPhotoName(name)) {
+                newUploads.add(name);
+              }
+            });
+            renderPhotoPreview();
+          }
+        } catch (err) {
+          alert(`上傳照片失敗：${err.message}`);
+        } finally {
+          evt.target.value = "";
+        }
+      });
+    }
+
+    if (btnAddPhotoUrl) {
+      btnAddPhotoUrl.addEventListener("click", () => {
+        const value = prompt("請輸入圖片網址或既有檔名", "https://");
+        if (!value) return;
+        const trimmed = value.trim();
+        if (!trimmed) return;
+        currentPhotos.push(trimmed);
+        renderPhotoPreview();
+      });
+    }
+
+    if (btnClearPhotos) {
+      btnClearPhotos.addEventListener("click", async () => {
+        if (!currentPhotos.length) return;
+        if (!confirm("確定要清除所有圖片？")) return;
+        const removed = currentPhotos.filter((name) => newUploads.has(name) && isLocalPhotoName(name));
+        currentPhotos = [];
+        removed.forEach((name) => newUploads.delete(name));
+        renderPhotoPreview();
+        await requestDeletePhotos(removed);
+      });
+    }
+
+    renderPhotoPreview();
 
     function isUnauthorized(resp) {
       if (resp && resp.status === 401) {
@@ -310,8 +521,8 @@
           redirectToLogin();
           return false;
         }
-        const email = data.user?.email || "未知帳號";
-        const name = data.user?.name;
+        const email = data.user && data.user.email ? data.user.email : "未知帳號";
+        const name = data.user && data.user.name ? data.user.name : null;
         authUserLabel.textContent = name ? `已登入：${name}（${email}）` : `已登入：${email}`;
         btnLogout.classList.remove("d-none");
         btnLogout.disabled = false;
@@ -568,8 +779,9 @@
       evt.target.value = "";
     });
 
-    function openModal(data) {
-      editingId = data?.id || null;
+    async function openModal(data) {
+      await cleanupUnsavedUploads();
+      editingId = data && data.id ? data.id : null;
       modalTitle.textContent = editingId ? `編輯事件 #${editingId}` : "新增事件";
       const formData = new FormData(editForm);
       formData.forEach((_, key) => {
@@ -588,13 +800,30 @@
           }
         });
       }
+      let photoList = [];
+      if (data && Array.isArray(data.photo_filenames) && data.photo_filenames.length) {
+        photoList = data.photo_filenames.slice();
+      } else if (data && data.photo_filename) {
+        photoList = [data.photo_filename];
+      }
+      currentPhotos = photoList;
+      newUploads = new Set();
+      renderPhotoPreview();
       editModal.classList.remove("d-none");
     }
 
-    function closeModal() {
+    async function closeModal(options = {}) {
+      const { skipCleanup = false } = options;
+      if (skipCleanup) {
+        newUploads.clear();
+      } else {
+        await cleanupUnsavedUploads();
+      }
       editModal.classList.add("d-none");
       editingId = null;
       editForm.reset();
+      currentPhotos = [];
+      renderPhotoPreview();
     }
 
     async function openEditModal(id) {
@@ -605,7 +834,7 @@
         return;
       }
       const data = await resp.json();
-      openModal(data);
+      await openModal(data);
     }
 
     btnAdd.addEventListener("click", () => openModal());
@@ -635,6 +864,7 @@
           payload[key] = value;
         }
       });
+      payload.photo_filenames = currentPhotos.slice();
       try {
         const resp = await fetch(editingId ? `/api/events/${editingId}` : "/api/events/", {
           method: editingId ? "PUT" : "POST",
@@ -647,10 +877,28 @@
           alert(`儲存失敗：${msg}`);
           return;
         }
-        closeModal();
+        await closeModal({ skipCleanup: true });
         fetchEvents();
       } catch (err) {
         alert(`儲存失敗：${err.message}`);
+      }
+    });
+
+    window.addEventListener("beforeunload", () => {
+      if (!newUploads.size) return;
+      const names = Array.from(newUploads);
+      newUploads.clear();
+      const payload = JSON.stringify({ files: names });
+      if (navigator.sendBeacon) {
+        const blob = new Blob([payload], { type: "application/json" });
+        navigator.sendBeacon("/api/events/delete-photo", blob);
+      } else {
+        fetch("/api/events/delete-photo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+          keepalive: true,
+        });
       }
     });
 

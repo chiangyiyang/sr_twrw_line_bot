@@ -2,7 +2,7 @@ import os
 import sys
 from typing import Set
 
-from flask import Flask, abort, request, send_from_directory
+from flask import Flask, abort, jsonify, request, send_from_directory
 from dotenv import load_dotenv
 
 from linebot import LineBotApi, WebhookHandler
@@ -123,6 +123,57 @@ def callback():
         abort(400, description="Invalid signature")
 
     return "OK"
+
+
+@app.errorhandler(401)
+def handle_unauthorized(error):
+    description = (getattr(error, "description", None) or "Unauthorized").strip()
+    if request.path.startswith("/api/"):
+        return jsonify({"error": description, "status": 401}), 401
+    if request.path.endswith("events_admin.html"):
+        html = f"""
+        <!DOCTYPE html>
+        <html lang="zh-Hant">
+        <head>
+          <meta charset="utf-8" />
+          <title>Unauthorized</title>
+          <style>
+            body {{
+              margin: 0;
+              min-height: 100vh;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-family: system-ui, 'Noto Sans TC', sans-serif;
+              background: #f5f6f8;
+            }}
+            .card {{
+              background: #fff;
+              padding: 32px;
+              border-radius: 16px;
+              box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+              text-align: center;
+              max-width: 360px;
+            }}
+            a {{
+              display: inline-block;
+              margin-top: 16px;
+              text-decoration: none;
+              color: #2563eb;
+            }}
+          </style>
+        </head>
+        <body>
+          <main class="card">
+            <h1>Unauthorized 請先登入</h1>
+            <p>請使用授權 Google 帳號登入後再試一次。</p>
+            <a href="/login.html">前往登入頁面</a>
+          </main>
+        </body>
+        </html>
+        """
+        return html, 401
+    return description, 401
 
 
 def _source_key(event: MessageEvent) -> str:

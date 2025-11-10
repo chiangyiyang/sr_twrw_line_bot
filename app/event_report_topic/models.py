@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, List, Optional
+
+from .photos import parse_photo_field
 
 
 @dataclass
@@ -22,7 +24,13 @@ class ReportEventRecord:
     source_id: Optional[str]
     created_at: Optional[str] = None
 
+    @property
+    def photo_filenames(self) -> List[str]:
+        return parse_photo_field(self.photo_filename)
+
     def to_dict(self) -> Dict[str, object]:
+        photos = self.photo_filenames
+        primary_photo = photos[0] if photos else None
         return {
             "id": self.id,
             "event_type": self.event_type,
@@ -30,7 +38,8 @@ class ReportEventRecord:
             "track_side": self.track_side,
             "mileage_text": self.mileage_text,
             "mileage_meters": self.mileage_meters,
-            "photo_filename": self.photo_filename,
+            "photo_filename": primary_photo,
+            "photo_filenames": photos,
             "longitude": self.longitude,
             "latitude": self.latitude,
             "location_title": self.location_title,

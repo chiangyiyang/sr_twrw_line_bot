@@ -6,13 +6,17 @@ import io
 import json
 import math
 import os
+import secrets
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 from flask import Blueprint, Response, abort, jsonify, request
+from werkzeug.utils import secure_filename
 
 from . import repository
 from .models import ReportEventRecord
+from .photos import parse_photo_field, serialize_photo_field
 from ..paths import EVENT_PICTURES_DIR
 from ..auth import login_required
 
@@ -70,7 +74,11 @@ def _parse_filters() -> Dict[str, Optional[str]]:
 
 def _clean_payload(data: Dict[str, object], *, partial: bool = False) -> Dict[str, object]:
     cleaned: Dict[str, object] = {}
+    photos_field_provided = "photo_filenames" in data or "photo_filename" in data
+    photos_value = data.get("photo_filenames", data.get("photo_filename"))
     for key, value in data.items():
+        if key in {"photo_filenames", "photo_filename"}:
+            continue
         if key not in repository._EVENT_COLUMNS:
             continue
         if key in {"longitude", "latitude", "mileage_meters"}:
@@ -83,6 +91,9 @@ def _clean_payload(data: Dict[str, object], *, partial: bool = False) -> Dict[st
                     raise ValueError(f"{key} 需要為數值")
         else:
             cleaned[key] = value.strip() if isinstance(value, str) else value
+    if photos_field_provided:
+        photos = parse_photo_field(photos_value)
+        cleaned["photo_filename"] = serialize_photo_field(photos)
 
     if not partial:
         for field in _REQUIRED_FIELDS:
@@ -146,6 +157,9 @@ def create_event():
 @api_bp.put("/<int:event_id>")
 @login_required
 def update_event(event_id: int):
+    original = repository.get_event(event_id)
+    if not original:
+        abort(404, description="事件不存在")
     data = request.get_json(silent=True) or {}
     if not isinstance(data, dict):
         abort(400, description="請提供 JSON 物件")
@@ -156,6 +170,9 @@ def update_event(event_id: int):
     updated = repository.update_event(event_id, cleaned)
     if not updated:
         abort(404, description="事件不存在")
+    removed = [name for name in original.photo_filenames if name not in updated.photo_filenames]
+    if removed:
+        _delete_photo_filenames(removed)
     return jsonify(updated.to_dict())
 
 
@@ -253,6 +270,8 @@ def import_events():
 
 
 _PICTURES_DIR = Path(os.getenv("EVENTS_PICTURES_DIR") or EVENT_PICTURES_DIR)
+_ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+_MAX_UPLOAD_FILES = 10
 
 
 def _photo_path(filename: Optional[str]) -> Optional[Path]:
@@ -262,17 +281,76 @@ def _photo_path(filename: Optional[str]) -> Optional[Path]:
     return _PICTURES_DIR / safe_name
 
 
-def _delete_photo_files(records: Sequence[ReportEventRecord]) -> None:
-    for record in records:
-        photo_path = _photo_path(getattr(record, "photo_filename", None))
+def _is_local_photo(name: Optional[str]) -> bool:
+    if not name:
+        return False
+    lowered = str(name).strip().lower()
+    return not lowered.startswith(("http://", "https://"))
+
+
+def _delete_photo_filenames(filenames: Sequence[str]) -> int:
+    deleted = 0
+    for filename in filenames:
+        if not _is_local_photo(filename):
+            continue
+        photo_path = _photo_path(filename)
         if not photo_path:
             continue
         try:
             photo_path.unlink(missing_ok=True)
+            deleted += 1
         except TypeError:
-            # Python <3.8 missing ok arg
             try:
                 if photo_path.exists():
                     photo_path.unlink()
+                    deleted += 1
             except OSError:
                 continue
+    return deleted
+
+
+def _delete_photo_files(records: Sequence[ReportEventRecord]) -> None:
+    for record in records:
+        _delete_photo_filenames(record.photo_filenames)
+
+
+def _save_uploaded_photo(file_storage) -> str:
+    if file_storage is None or not getattr(file_storage, "filename", ""):
+        raise ValueError("請提供要上傳的圖片")
+    original_name = secure_filename(file_storage.filename)
+    suffix = Path(original_name).suffix.lower()
+    if suffix not in _ALLOWED_IMAGE_EXTENSIONS:
+        raise ValueError("不支援的圖片格式")
+    unique = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}_{secrets.token_hex(8)}{suffix}"
+    target = _PICTURES_DIR / unique
+    target.parent.mkdir(parents=True, exist_ok=True)
+    file_storage.save(target)
+    return unique
+
+
+@api_bp.post("/upload-photo")
+@login_required
+def upload_photo():
+    files = request.files.getlist("photos") or request.files.getlist("photo")
+    if not files:
+        abort(400, description="請提供要上傳的圖片")
+    saved: List[str] = []
+    for file_storage in files[:_MAX_UPLOAD_FILES]:
+        try:
+            saved.append(_save_uploaded_photo(file_storage))
+        except ValueError as exc:
+            abort(400, description=str(exc))
+    if not saved:
+        abort(400, description="未成功上傳任何圖片")
+    return jsonify({"files": saved})
+
+
+@api_bp.post("/delete-photo")
+@login_required
+def delete_uploaded_photo():
+    data = request.get_json(silent=True) or {}
+    files = data.get("files")
+    if not isinstance(files, list) or not all(isinstance(item, str) for item in files):
+        abort(400, description="files 需為字串陣列")
+    deleted = _delete_photo_filenames(files)
+    return jsonify({"deleted": deleted})
