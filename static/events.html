@@ -3,17 +3,14 @@
 
 <head>
   <meta charset="utf-8" />
-  <title>事件回報分佈圖</title>
+  <title>事件分佈圖</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-    crossorigin="" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-    crossorigin=""></script>
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <style>
     html,
@@ -21,6 +18,7 @@
       height: 100%;
       margin: 0;
       font-family: system-ui, 'Noto Sans TC', sans-serif;
+      background: #f7f7f7;
     }
 
     #map {
@@ -33,10 +31,19 @@
       top: 10px;
       left: 10px;
       z-index: 1000;
-      background: rgba(255, 255, 255, 0.95);
-      padding: 12px 16px;
+      background: rgba(255, 255, 255, 0.96);
+      padding: 12px;
       border-radius: 10px;
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+      width: 340px;
+      max-width: calc(100% - 20px);
+    }
+
+    .topbar-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
     }
 
     .topbar h1 {
@@ -44,15 +51,79 @@
       font-size: 18px;
     }
 
+    .topbar p {
+      margin: 4px 0 0;
+      font-size: 13px;
+      color: #555;
+    }
+
     .topbar button {
-      margin-top: 8px;
       padding: 6px 12px;
       border-radius: 6px;
-      border: none;
+      border: 1px solid transparent;
       background: #1c90ff;
       color: #fff;
       cursor: pointer;
       font-size: 13px;
+    }
+
+    .topbar button.secondary {
+      background: #e9eef6;
+      color: #1f3a5f;
+      border-color: #c2d0e2;
+    }
+
+    .topbar button.full {
+      width: 100%;
+      align-self: flex-start;
+    }
+
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .control-block {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .control-block label {
+      font-size: 13px;
+      color: #333;
+    }
+
+    .inline-inputs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .controls input {
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      font-size: 13px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: #777;
+    }
+
+    .summary {
+      font-size: 12px;
+      color: #555;
+      min-height: 16px;
+    }
+
+    .hidden {
+      display: none !important;
     }
 
     .status-box {
@@ -65,15 +136,86 @@
       border-radius: 8px;
       font-size: 12px;
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+      max-width: 320px;
+    }
+
+    @media (max-width: 600px) {
+      .topbar {
+        width: calc(100% - 20px);
+      }
+
+      .inline-inputs {
+        flex-direction: column;
+      }
     }
   </style>
 </head>
 
 <body>
   <div class="topbar">
-    <h1>事件回報分佈圖</h1>
-    <div>本地圖顯示近期 LINE 回報的災情事件。</div>
-    <button id="btnReload">重新載入資料</button>
+    <div class="topbar-header">
+      <div style="flex:1;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <h1 style="flex:1;margin-bottom:4px;">事件分佈圖</h1>
+          <button id="btnReload" class="secondary" title="重新載入事件資料">重新載入</button>
+          <button id="btnToggleFilters" class="secondary" title="收合或展開查詢面板">-</button>
+        </div>
+        <p>即時呈現 LINE 回報事件，可依事件 ID、類型、路線與座標快速定位。</p>
+      </div>
+    </div>
+    <div id="extraFilters" class="controls">
+      <div class="control-block">
+        <label for="eventId">事件 ID</label>
+        <div class="inline-inputs">
+          <input type="number" id="eventId" placeholder="例如：125" min="1" step="1" />
+          <button id="btnSearchEvent" class="full">查詢事件</button>
+        </div>
+      </div>
+      <div class="control-block">
+        <label>事件條件</label>
+        <div class="inline-inputs">
+          <input type="text" id="eventType" list="eventTypeOptions" placeholder="事件類型" />
+          <input type="text" id="routeLine" list="routeLineOptions" placeholder="路線別" />
+        </div>
+      </div>
+      <div class="control-block">
+        <label>時間範圍</label>
+        <div class="inline-inputs">
+          <input type="datetime-local" id="startTime" />
+          <input type="datetime-local" id="endTime" />
+        </div>
+        <div class="hint">可填寫起迄其一，系統會以單向條件查詢。</div>
+      </div>
+      <div class="control-block">
+        <label for="lonInput">指定經緯度</label>
+        <div class="inline-inputs">
+          <input type="text" id="lonInput" placeholder="經度 120.987" />
+          <input type="text" id="latInput" placeholder="緯度 23.456" />
+        </div>
+        <div class="inline-inputs">
+          <input type="number" id="rangeKm" placeholder="範圍 (公里)" min="1" step="1" />
+          <button id="btnCenterMap" class="secondary full">定位地圖</button>
+        </div>
+        <div class="hint">輸入經緯度後，可搭配範圍條件過濾資料並重新整理。</div>
+      </div>
+      <span id="summary" class="summary"></span>
+      <button id="btnClearFilters" class="secondary full" type="button">清除條件</button>
+      <button id="btnApplyFilters" class="full">套用條件</button>
+    </div>
+    <datalist id="eventTypeOptions">
+      <option value="土石滑落"></option>
+      <option value="落石"></option>
+      <option value="坍方"></option>
+      <option value="設備異常"></option>
+      <option value="其他"></option>
+    </datalist>
+    <datalist id="routeLineOptions">
+      <option value="平溪線"></option>
+      <option value="宜蘭線"></option>
+      <option value="縱貫線"></option>
+      <option value="內灣線"></option>
+      <option value="阿里山線"></option>
+    </datalist>
   </div>
   <div id="map"></div>
   <div class="status-box" id="status">載入中...</div>
@@ -88,24 +230,295 @@
     const markers = L.markerClusterGroup();
     map.addLayer(markers);
 
+    const statusEl = document.getElementById('status');
+    const summaryEl = document.getElementById('summary');
+    const toggleBtn = document.getElementById('btnToggleFilters');
+    const extraFilters = document.getElementById('extraFilters');
+    const eventIdInput = document.getElementById('eventId');
+    const eventTypeInput = document.getElementById('eventType');
+    const routeLineInput = document.getElementById('routeLine');
+    const startTimeInput = document.getElementById('startTime');
+    const endTimeInput = document.getElementById('endTime');
+    const lonInput = document.getElementById('lonInput');
+    const latInput = document.getElementById('latInput');
+    const rangeInput = document.getElementById('rangeKm');
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialEventId = urlParams.get('event_id');
+    const initialLon = urlParams.get('lon');
+    const initialLat = urlParams.get('lat');
+    const initialEventType = urlParams.get('event_type');
+    const initialRouteLine = urlParams.get('route_line');
+    const initialStartTime = urlParams.get('start_time');
+    const initialEndTime = urlParams.get('end_time');
+    const initialRangeKm = urlParams.get('range_km');
+
+    if (initialEventId) eventIdInput.value = initialEventId;
+    if (initialLon) lonInput.value = initialLon;
+    if (initialLat) latInput.value = initialLat;
+    if (initialEventType) eventTypeInput.value = initialEventType;
+    if (initialRouteLine) routeLineInput.value = initialRouteLine;
+    setDateInputValue(startTimeInput, initialStartTime);
+    setDateInputValue(endTimeInput, initialEndTime);
+    if (initialRangeKm) rangeInput.value = initialRangeKm;
+
+    let pendingCenter = parseCenter(initialLon, initialLat);
+    let currentEventId = toEventId(initialEventId);
+
+    function parseCenter(lonText, latText) {
+      const lon = toNumber(lonText);
+      const lat = toNumber(latText);
+      if (typeof lon === 'number' && typeof lat === 'number') {
+        return { lon, lat };
+      }
+      return null;
+    }
+
+    function toNumber(value) {
+      if (value === undefined || value === null || value === '') return null;
+      const num = Number(value);
+      return Number.isFinite(num) ? num : null;
+    }
+
+    function toPositiveNumber(value) {
+      const num = toNumber(value);
+      if (typeof num === 'number' && num > 0) {
+        return num;
+      }
+      return null;
+    }
+
+    function toEventId(value) {
+      const num = toNumber(value);
+      if (num === null) return null;
+      const rounded = Math.floor(Math.abs(num));
+      return rounded > 0 ? rounded : null;
+    }
+
+    function formatCoord(value) {
+      return typeof value === 'number' ? value.toFixed(6) : '';
+    }
+
+    function toRadians(value) {
+      return (value * Math.PI) / 180;
+    }
+
+    function formatDateInput(date) {
+      const pad = (n) => n.toString().padStart(2, '0');
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    }
+
+    function setDateInputValue(input, value) {
+      if (!value) return;
+      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) {
+        input.value = value;
+        return;
+      }
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        input.value = formatDateInput(parsed);
+      }
+    }
+
+    function sanitizeDateValue(value) {
+      const trimmed = (value || '').trim();
+      if (!trimmed) return null;
+      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)) {
+        return trimmed;
+      }
+      const parsed = new Date(trimmed);
+      if (Number.isNaN(parsed.getTime())) return null;
+      return formatDateInput(parsed);
+    }
+
+    function formatDisplayDate(value) {
+      if (!value) return '';
+      const normalized = sanitizeDateValue(value);
+      if (!normalized) return '';
+      const [datePart, timePart] = normalized.split('T');
+      const [year, month, day] = datePart.split('-');
+      return `${year}/${month}/${day} ${timePart}`;
+    }
+
+    function describeTimeRange(start, end) {
+      const startText = formatDisplayDate(start);
+      const endText = formatDisplayDate(end);
+      if (startText && endText) return `${startText} ~ ${endText}`;
+      if (startText) return `自 ${startText}`;
+      if (endText) return `至 ${endText}`;
+      return '';
+    }
+
     function setStatus(text) {
-      document.getElementById('status').textContent = text;
+      statusEl.textContent = text;
+    }
+
+    function setSummary(text) {
+      summaryEl.textContent = text || '';
+    }
+
+    function focusOnCoordinate(lon, lat, zoom = 14) {
+      if (typeof lon !== 'number' || typeof lat !== 'number') return;
+      map.setView([lat, lon], zoom);
+    }
+
+    function hasCoordinates(item) {
+      return typeof item.latitude === 'number' && typeof item.longitude === 'number';
+    }
+
+    function describeCenter(center) {
+      if (!center) return '';
+      return `${center.lat.toFixed(3)}, ${center.lon.toFixed(3)}`;
+    }
+
+    function collectFilters() {
+      const eventType = (eventTypeInput.value || '').trim();
+      const routeLine = (routeLineInput.value || '').trim();
+      const startTime = sanitizeDateValue(startTimeInput.value);
+      const endTime = sanitizeDateValue(endTimeInput.value);
+      const center = parseCenter(lonInput.value, latInput.value);
+      const rangeKm = toPositiveNumber(rangeInput.value);
+      return {
+        api: {
+          event_type: eventType || null,
+          route_line: routeLine || null,
+          start_time: startTime,
+          end_time: endTime,
+        },
+        center,
+        rangeKm,
+      };
+    }
+
+    function clearFilterInputs() {
+      eventIdInput.value = '';
+      eventTypeInput.value = '';
+      routeLineInput.value = '';
+      startTimeInput.value = '';
+      endTimeInput.value = '';
+      lonInput.value = '';
+      latInput.value = '';
+      rangeInput.value = '';
+      pendingCenter = null;
+    }
+
+    function persistFilterParams(filters) {
+      const resolved = filters || collectFilters();
+      updateQueryParams({
+        event_type: resolved.api.event_type,
+        route_line: resolved.api.route_line,
+        start_time: resolved.api.start_time,
+        end_time: resolved.api.end_time,
+        lon: resolved.center ? formatCoord(resolved.center.lon) : null,
+        lat: resolved.center ? formatCoord(resolved.center.lat) : null,
+        range_km: resolved.rangeKm ?? null,
+      });
+      return resolved;
+    }
+
+    function filterByRange(items, center, rangeKm) {
+      if (!center || !rangeKm) return items.slice();
+      return items.filter((item) => {
+        if (!hasCoordinates(item)) return false;
+        const distance = haversineKm(center.lat, center.lon, item.latitude, item.longitude);
+        return distance <= rangeKm;
+      });
+    }
+
+    function haversineKm(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = toRadians(lat2 - lat1);
+      const dLon = toRadians(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) ** 2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    function buildSummary(meta, plottedCount) {
+      if (!meta) {
+        return `已載入 ${plottedCount} 筆事件。`;
+      }
+      if (meta.eventId) {
+        if (plottedCount) {
+          return `顯示事件 ID：${meta.eventId}（已定位 ${plottedCount} 筆）`;
+        }
+        return `顯示事件 ID：${meta.eventId}（缺少經緯度資訊）`;
+      }
+      const parts = [];
+      parts.push(`符合條件 ${meta.totalFetched} 筆`);
+      if (meta.eventType) parts.push(`類型：${meta.eventType}`);
+      if (meta.routeLine) parts.push(`路線：${meta.routeLine}`);
+      const timeText = describeTimeRange(meta.startTime, meta.endTime);
+      if (timeText) parts.push(`時間：${timeText}`);
+      if (meta.rangeKm) {
+        if (meta.rangeApplied && meta.rangeCenter) {
+          parts.push(`範圍：${meta.rangeKm} 公里（中心 ${describeCenter(meta.rangeCenter)}）`);
+        } else {
+          parts.push(`範圍：${meta.rangeKm} 公里（未套用，請輸入經緯度）`);
+        }
+      }
+      parts.push(`地圖顯示 ${plottedCount} 筆`);
+      return parts.join(' ｜ ');
+    }
+
+    function render(items, { center, meta } = {}) {
+      markers.clearLayers();
+      const plotted = [];
+      items.forEach((item) => {
+        if (!hasCoordinates(item)) {
+          return;
+        }
+        const marker = L.marker([item.latitude, item.longitude]).bindPopup(toPopup(item));
+        markers.addLayer(marker);
+        plotted.push(marker);
+      });
+
+      if (center) {
+        focusOnCoordinate(center.lon, center.lat);
+      } else if (plotted.length) {
+        const group = L.featureGroup(plotted);
+        map.fitBounds(group.getBounds().pad(0.12));
+      }
+
+      setSummary(buildSummary(meta, plotted.length));
+
+      if (!items.length) {
+        setStatus(meta?.eventId ? `事件 ID ${meta.eventId} 缺少符合條件的資料。` : '尚未找到符合條件的事件。');
+        return;
+      }
+
+      if (!plotted.length) {
+        setStatus('事件存在但缺少經緯度，無法於地圖顯示。');
+        return;
+      }
+
+      if (meta?.eventId) {
+        setStatus(`事件 ID ${meta.eventId} 已載入，點擊圖標可查看詳細資訊。`);
+      } else if (meta?.rangeApplied && meta.rangeKm && meta.rangeCenter) {
+        setStatus(`距離 ${meta.rangeKm} 公里內共 ${plotted.length} 筆事件（原始 ${meta.totalFetched} 筆）。`);
+      } else {
+        setStatus(`已載入 ${plotted.length} 筆事件${meta ? `（API 回傳 ${meta.totalFetched} 筆）` : ''}。`);
+      }
     }
 
     function toPopup(item) {
-      const lines = [
-        `<strong>${item.event_type}｜${item.route_line}｜${item.track_side}</strong>`,
-        `里程：${item.mileage_text || '-'}`,
-      ];
-      if (typeof item.longitude === 'number' && typeof item.latitude === 'number') {
-        lines.push(`座標：${item.longitude.toFixed(5)}, ${item.latitude.toFixed(5)}`);
+      const segments = [];
+      segments.push(`<div><strong>事件 ID：${item.id ?? '-'}</strong></div>`);
+      segments.push(`<div>${item.event_type || '-'}｜${item.route_line || '-'}｜${item.track_side || '-'}</div>`);
+      if (item.mileage_text) {
+        segments.push(`<div>里程：${item.mileage_text}</div>`);
+      }
+      if (hasCoordinates(item)) {
+        segments.push(`<div>座標：${item.longitude.toFixed(5)}, ${item.latitude.toFixed(5)}</div>`);
       }
       if (item.location_title || item.location_address) {
         const desc = [item.location_title, item.location_address].filter(Boolean).join(' / ');
-        lines.push(`描述：${desc}`);
+        segments.push(`<div>位置描述：${desc}</div>`);
       }
       if (item.created_at) {
-        lines.push(`回報時間：${item.created_at}`);
+        segments.push(`<div>建立時間：${item.created_at}</div>`);
       }
       const photoList = Array.isArray(item.photo_filenames) && item.photo_filenames.length
         ? item.photo_filenames
@@ -115,50 +528,175 @@
         const photoUrl = /^https?:\/\//i.test(firstPhoto)
           ? firstPhoto
           : `/events/pictures/${encodeURIComponent(firstPhoto)}`;
-        lines.push(`
+        segments.push(`
           <a href="${photoUrl}" target="_blank" rel="noopener" style="display:block;margin-top:6px;text-align:center;">
             <img src="${photoUrl}" alt="事件照片" style="display:inline-block;margin:0 auto;border-radius:6px;max-width:100%;max-height:300px;height:auto;width:auto;" />
           </a>
         `);
       }
-      return lines.join('<br>');
+      return segments.join('');
     }
 
-    function render(items) {
-      markers.clearLayers();
-      const hasItems = items.length > 0;
-      items.forEach(item => {
-        if (typeof item.latitude !== 'number' || typeof item.longitude !== 'number') {
-          return;
+    async function fetchEvents({ eventId = null, filters = {} } = {}) {
+      if (eventId) {
+        const resp = await fetch(`/api/events/${eventId}`, { cache: 'no-store' });
+        if (resp.status === 404) {
+          return [];
         }
-        const marker = L.marker([item.latitude, item.longitude]).bindPopup(toPopup(item));
-        markers.addLayer(marker);
-      });
-      if (hasItems) {
-        const group = L.featureGroup(markers.getLayers());
-        map.fitBounds(group.getBounds().pad(0.1));
-      }
-      setStatus(`共 ${items.length} 筆事件（僅顯示有座標者）`);
-    }
-
-    async function loadEvents() {
-      try {
-        setStatus('載入資料中...');
-        const resp = await fetch('/api/events/?limit=1000', { cache: 'no-store' });
         if (!resp.ok) {
           throw new Error(`HTTP ${resp.status}`);
         }
-        const data = await resp.json();
-        const items = (data.items || []).filter(item => typeof item.longitude === 'number' && typeof item.latitude === 'number');
-        render(items);
+        const item = await resp.json();
+        return item ? [item] : [];
+      }
+
+      const query = new URLSearchParams();
+      query.set('limit', '1000');
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value) {
+          query.set(key, value);
+        }
+      });
+      const resp = await fetch(`/api/events/?${query.toString()}`, { cache: 'no-store' });
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}`);
+      }
+      const data = await resp.json();
+      return Array.isArray(data.items) ? data.items : [];
+    }
+
+    async function loadEvents({ eventId = null, center = null, presetFilters = null } = {}) {
+      const filters = presetFilters || collectFilters();
+      const { api, center: filterCenter, rangeKm } = filters;
+      currentEventId = eventId;
+      try {
+        setStatus(eventId ? `載入事件 ID ${eventId} 中…` : '載入事件列表中…');
+        const items = await fetchEvents({ eventId, filters: eventId ? {} : api });
+        if (eventId && items.length === 0) {
+          markers.clearLayers();
+          setSummary('');
+          setStatus(`找不到事件 ID ${eventId}，請確認後再試。`);
+          return;
+        }
+        let filteredItems = items.slice();
+        let rangeApplied = false;
+        let rangeCenter = filterCenter;
+        if (!eventId && rangeKm && filterCenter) {
+          filteredItems = filterByRange(items, filterCenter, rangeKm);
+          rangeApplied = true;
+        }
+        const displayCenter = center || pendingCenter || (rangeApplied ? rangeCenter : filterCenter);
+        render(filteredItems, {
+          center: displayCenter,
+          meta: {
+            eventId,
+            totalFetched: items.length,
+            eventType: api.event_type,
+            routeLine: api.route_line,
+            startTime: api.start_time,
+            endTime: api.end_time,
+            rangeKm,
+            rangeCenter,
+            rangeApplied,
+          },
+        });
+        pendingCenter = null;
+
+        if (eventId) {
+          const target = items.find(hasCoordinates);
+          updateQueryParams({
+            event_id: eventId,
+            lon: target ? formatCoord(target.longitude) : null,
+            lat: target ? formatCoord(target.latitude) : null,
+          });
+          if (target) {
+            lonInput.value = formatCoord(target.longitude);
+            latInput.value = formatCoord(target.latitude);
+            focusOnCoordinate(target.longitude, target.latitude);
+          }
+        }
       } catch (err) {
         console.error(err);
-        setStatus('載入資料失敗，請稍後再試');
+        setStatus('載入事件資料時發生錯誤，請稍候再試。');
       }
     }
 
-    document.getElementById('btnReload').addEventListener('click', loadEvents);
-    loadEvents();
+    function updateQueryParams(updates) {
+      const params = new URLSearchParams(window.location.search);
+      Object.entries(updates).forEach(([key, value]) => {
+        if (value === null || value === undefined || value === '') {
+          params.delete(key);
+        } else {
+          params.set(key, value);
+        }
+      });
+      const query = params.toString();
+      const newUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+      window.history.replaceState({}, '', newUrl);
+    }
+
+    document.getElementById('btnApplyFilters').addEventListener('click', () => {
+      const filters = collectFilters();
+      if (filters.api.start_time && filters.api.end_time && filters.api.start_time > filters.api.end_time) {
+        setStatus('時間範圍不正確，請確認起訖順序。');
+        return;
+      }
+      const persisted = persistFilterParams(filters);
+      eventIdInput.value = '';
+      updateQueryParams({ event_id: null });
+      loadEvents({ presetFilters: persisted });
+    });
+
+    document.getElementById('btnReload').addEventListener('click', () => {
+      eventIdInput.value = '';
+      updateQueryParams({ event_id: null });
+      const filters = persistFilterParams();
+      loadEvents({ presetFilters: filters });
+    });
+
+    document.getElementById('btnSearchEvent').addEventListener('click', () => {
+      const eventId = toEventId(eventIdInput.value);
+      if (!eventId) {
+        setStatus('請輸入正確的事件 ID。');
+        return;
+      }
+      loadEvents({ eventId });
+    });
+
+    document.getElementById('btnCenterMap').addEventListener('click', () => {
+      const lon = toNumber(lonInput.value);
+      const lat = toNumber(latInput.value);
+      if (typeof lon !== 'number' || typeof lat !== 'number') {
+        setStatus('請輸入正確的經緯度數值。');
+        return;
+      }
+      const filters = persistFilterParams();
+      const eventId = toEventId(eventIdInput.value);
+      loadEvents({ eventId, center: { lon, lat }, presetFilters: filters });
+    });
+
+    document.getElementById('btnClearFilters').addEventListener('click', () => {
+      clearFilterInputs();
+      updateQueryParams({
+        event_id: null,
+        event_type: null,
+        route_line: null,
+        start_time: null,
+        end_time: null,
+        lon: null,
+        lat: null,
+        range_km: null,
+      });
+      setStatus('已清除查詢條件，重新載入中…');
+      loadEvents({ presetFilters: collectFilters() });
+    });
+
+    toggleBtn.addEventListener('click', () => {
+      extraFilters.classList.toggle('hidden');
+      toggleBtn.textContent = extraFilters.classList.contains('hidden') ? '+' : '-';
+    });
+
+    loadEvents({ eventId: currentEventId, center: pendingCenter });
   </script>
 </body>
 

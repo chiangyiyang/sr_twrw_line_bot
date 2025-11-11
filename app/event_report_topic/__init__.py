@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional, Sequence, Tuple
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from uuid import uuid4
 
 from linebot import LineBotApi
@@ -44,6 +45,31 @@ _MILEAGE_PATTERN = re.compile(r"^(?:k|K)?\s*(\d+)(?:\+(\d+))?$")
 _COORD_PATTERN = re.compile(r"[-+]?\d+(?:\.\d+)?")
 
 _PICTURE_DIR = EVENT_PICTURES_DIR
+
+
+def _append_query_params(base_url: str, params: Dict[str, object]) -> str:
+    if not params:
+        return base_url
+    parsed = urlparse(base_url)
+    existing = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    for key, value in params.items():
+        if value is None:
+            continue
+        existing[key] = str(value)
+    new_query = urlencode(existing, doseq=True)
+    return urlunparse(parsed._replace(query=new_query))
+
+
+def _event_public_link(base_url: str, record: ReportEventRecord) -> str:
+    params: Dict[str, object] = {}
+    if record.id:
+        params["event_id"] = record.id
+    if isinstance(record.longitude, (int, float)) and isinstance(record.latitude, (int, float)):
+        params["lon"] = f"{float(record.longitude):.6f}"
+        params["lat"] = f"{float(record.latitude):.6f}"
+    if not params:
+        return base_url
+    return _append_query_params(base_url, params)
 
 
 def _normalize_text(text: str) -> str:
@@ -372,7 +398,7 @@ def _handle_confirmation(event: MessageEvent, session: Session, incoming_text: s
         key = _source_key(event)
         _set_session(key, None)
         state.set_topic(key, None)
-        page_url = get_public_page_url()
+        page_url = _event_public_link(get_public_page_url(), record)
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(
