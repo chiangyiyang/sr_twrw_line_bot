@@ -266,6 +266,26 @@
       }
     }
 
+    function getCoordinateQuery() {
+      const params = new URLSearchParams(window.location.search);
+      const lonText = params.get('lon') ?? params.get('lng');
+      const latText = params.get('lat');
+      if (!lonText || !latText) {
+        return null;
+      }
+      const lon = lonText.trim();
+      const lat = latText.trim();
+      const lonNum = Number(lon);
+      const latNum = Number(lat);
+      if (!Number.isFinite(lonNum) || !Number.isFinite(latNum)) {
+        return null;
+      }
+      return {
+        lon: lonNum.toFixed(6),
+        lat: latNum.toFixed(6),
+      };
+    }
+
     const extraFilters = document.getElementById('extraFilters');
     const toggleFiltersBtn = document.getElementById('btnToggleFilters');
     const lonInput = document.getElementById('lon');
@@ -273,6 +293,11 @@
     const pickBtn = document.getElementById('btnPickCoordinate');
     const locateBtn = document.getElementById('btnLocate');
     let picking = false;
+    const queryCoordinate = getCoordinateQuery();
+    if (queryCoordinate) {
+      lonInput.value = queryCoordinate.lon;
+      latInput.value = queryCoordinate.lat;
+    }
 
     toggleFiltersBtn.addEventListener('click', () => {
       const isHidden = extraFilters.classList.toggle('hidden');
@@ -358,7 +383,11 @@
       search({ type: 'coordinate', lon, lat });
     });
 
-    loadLatest();
+    if (queryCoordinate) {
+      search({ type: 'coordinate', lon: queryCoordinate.lon, lat: queryCoordinate.lat });
+    } else {
+      loadLatest();
+    }
   </script>
 </body>
 

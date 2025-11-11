@@ -58,6 +58,21 @@
   }).addTo(map);
 
   const geojsonUrl = 'cctv_data.json';
+  function getCoordinateQuery() {
+    const params = new URLSearchParams(window.location.search);
+    const lonText = params.get('lon') ?? params.get('lng');
+    const latText = params.get('lat');
+    if (!lonText || !latText) {
+      return null;
+    }
+    const lon = Number(lonText);
+    const lat = Number(latText);
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) {
+      return null;
+    }
+    return { lon, lat };
+  }
+  const queryCoordinate = getCoordinateQuery();
   
   let geojson;
   try {
@@ -90,6 +105,7 @@
   const markers = [];
   const clusterGroup = L.markerClusterGroup();
   map.addLayer(clusterGroup);
+  let coordinatePin = null;
 
   function renderMarkers(list) {
     clusterGroup.clearLayers();
@@ -103,6 +119,71 @@
       clusterGroup.addLayer(m);
       markers.push({ marker: m, data: d });
     });
+  }
+
+  function haversineDistance(lon1, lat1, lon2, lat2) {
+    const R = 6371000;
+    const toRad = (deg) => (deg * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const lat1Rad = toRad(lat1);
+    const lat2Rad = toRad(lat2);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(lat1Rad) * Math.cos(lat2Rad) * Math.sin(dLon / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+
+  function findNearestMarker(lon, lat) {
+    if (!markers.length) return null;
+    let best = null;
+    let bestDistance = Infinity;
+    markers.forEach(({ marker, data }) => {
+      if (!Number.isFinite(data.lng) || !Number.isFinite(data.lat)) return;
+      const dist = haversineDistance(lon, lat, data.lng, data.lat);
+      if (dist < bestDistance) {
+        bestDistance = dist;
+        best = { marker, data, distance: dist };
+      }
+    });
+    return best;
+  }
+
+  function focusOnCoordinate(lon, lat) {
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
+    const latLng = L.latLng(lat, lon);
+    if (!coordinatePin) {
+      coordinatePin = L.circleMarker(latLng, {
+        radius: 8,
+        color: '#ff6b00',
+        fillColor: '#ff6b00',
+        fillOpacity: 0.8,
+        weight: 2,
+      }).addTo(map);
+    } else {
+      coordinatePin.setLatLng(latLng);
+      coordinatePin.addTo(map);
+    }
+    coordinatePin.bindPopup(`指定座標：${lon.toFixed(6)}, ${lat.toFixed(6)}`).openPopup();
+
+    const nearest = findNearestMarker(lon, lat);
+    if (nearest && nearest.marker) {
+      const bounds = L.latLngBounds([latLng, [nearest.data.lat, nearest.data.lng]]);
+      if (bounds.isValid()) {
+        map.fitBounds(bounds.pad(0.2));
+      } else {
+        map.setView(latLng, Math.max(map.getZoom(), 12));
+      }
+      setTimeout(() => {
+        try {
+          nearest.marker.openPopup();
+        } catch (err) {
+          console.warn('無法自動開啟最近的 CCTV popup', err);
+        }
+      }, 400);
+    } else {
+      map.setView(latLng, Math.max(map.getZoom(), 12));
+    }
   }
 
   // 動態產生 Popup 內容（容器 + 之後掛載 media）
@@ -326,9 +407,13 @@
   // 初次渲染
   renderMarkers(data);
 
-  // 視野調整到所有點
-  const bounds = L.latLngBounds(data.map(d => [d.lat, d.lng]));
-  if (bounds.isValid()) map.fitBounds(bounds.pad(0.05));
+  if (queryCoordinate) {
+    focusOnCoordinate(queryCoordinate.lon, queryCoordinate.lat);
+  } else {
+    // 視野調整到所有點
+    const bounds = L.latLngBounds(data.map(d => [d.lat, d.lng]));
+    if (bounds.isValid()) map.fitBounds(bounds.pad(0.05));
+  }
 })();
 </script>
 </body>

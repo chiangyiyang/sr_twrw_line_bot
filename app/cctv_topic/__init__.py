@@ -9,6 +9,7 @@ import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from linebot import LineBotApi
 from linebot.models import (
@@ -239,14 +240,29 @@ def _get_public_cctv_page_url() -> str:
     return f"{scheme}://{host}{port_text}/cctv.html"
 
 
+def _build_page_url_with_params(base_url: str, extra_params: Optional[Dict[str, str]] = None) -> str:
+    if not extra_params:
+        return base_url
+    parsed = urlparse(base_url)
+    query_pairs = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    for key, value in (extra_params or {}).items():
+        if value is None:
+            continue
+        query_pairs[key] = value
+    new_query = urlencode(query_pairs)
+    return urlunparse(parsed._replace(query=new_query))
+
+
 def _reply_with_entries(
     event: MessageEvent,
     line_bot_api: LineBotApi,
     entries: Sequence[CCTVEntry],
     distances: Optional[Sequence[float]] = None,
+    link_params: Optional[Dict[str, str]] = None,
 ) -> None:
     text = _format_entries(entries, distances)
-    link_text = f"查看更多 CCTV：{_get_public_cctv_page_url()}"
+    page_url = _build_page_url_with_params(_get_public_cctv_page_url(), link_params)
+    link_text = f"查看更多 CCTV：{page_url}"
     line_bot_api.reply_message(
         event.reply_token,
         [
@@ -373,7 +389,11 @@ def _handle_coordinate_query(event: MessageEvent, line_bot_api: LineBotApi, long
         return True
 
     entries, distances = zip(*results)
-    _reply_with_entries(event, line_bot_api, entries, distances)
+    link_params = {
+        "lon": f"{longitude:.6f}",
+        "lat": f"{latitude:.6f}",
+    }
+    _reply_with_entries(event, line_bot_api, entries, distances, link_params=link_params)
     return True
 
 

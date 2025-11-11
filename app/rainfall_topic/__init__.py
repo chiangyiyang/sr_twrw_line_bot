@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from linebot import LineBotApi
 from linebot.models import (
@@ -157,8 +158,26 @@ def _format_response(items: List[StationObservation]) -> str:
     return formatted
 
 
-def _reply_with_results(event: MessageEvent, line_bot_api: LineBotApi, items: List[StationObservation]) -> None:
-    page_url = get_public_page_url()
+def _build_page_url_with_params(base_url: str, extra_params: Optional[Dict[str, str]] = None) -> str:
+    if not extra_params:
+        return base_url
+    parsed = urlparse(base_url)
+    query_pairs = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    for key, value in extra_params.items():
+        if value is None:
+            continue
+        query_pairs[key] = value
+    new_query = urlencode(query_pairs)
+    return urlunparse(parsed._replace(query=new_query))
+
+
+def _reply_with_results(
+    event: MessageEvent,
+    line_bot_api: LineBotApi,
+    items: List[StationObservation],
+    link_params: Optional[Dict[str, str]] = None,
+) -> None:
+    page_url = _build_page_url_with_params(get_public_page_url(), link_params)
     text = _format_response(items)
     link_text = f"查看更多雨量資訊：{page_url}"
     line_bot_api.reply_message(
@@ -173,7 +192,11 @@ def _reply_with_results(event: MessageEvent, line_bot_api: LineBotApi, items: Li
 def _handle_coordinate_query(event: MessageEvent, line_bot_api: LineBotApi, longitude: float, latitude: float) -> bool:
     source = _source_key(event)
     items = repository.search_nearest_by_coordinate(longitude, latitude, limit=3)
-    _reply_with_results(event, line_bot_api, items)
+    link_params = {
+        "lon": f"{longitude:.6f}",
+        "lat": f"{latitude:.6f}",
+    }
+    _reply_with_results(event, line_bot_api, items, link_params=link_params)
     _set_session(source, None)
     state.set_topic(source, None)
     return True
