@@ -130,10 +130,11 @@
         <button id="btnSearchDistrict" class="full">搜尋行政區</button>
       </div>
         <div class="control-block">
-          <div> 
+          <div class="inline-inputs" style="align-items:center;">
 
             <label for="lon">座標：</label>
             <button id="btnPickCoordinate" class="secondary full">在地圖上點選</button>
+            <button id="btnLocate" class="secondary full">定位</button>
           </div>
           <div class="inline-inputs">
             <input type="text" id="lon" placeholder="經度" style="width:120px;" />
@@ -155,6 +156,7 @@
 
     const markers = L.markerClusterGroup();
     map.addLayer(markers);
+    let coordinatePin = null;
 
     function toPopup(item) {
       const rain = item.rainfall || {};
@@ -226,20 +228,41 @@
       }
     }
 
+    function highlightCoordinate(lon, lat) {
+      if (coordinatePin) {
+        map.removeLayer(coordinatePin);
+        coordinatePin = null;
+      }
+      if (typeof lon === 'number' && typeof lat === 'number' && Number.isFinite(lon) && Number.isFinite(lat)) {
+        coordinatePin = L.marker([lat, lon]).addTo(map);
+        coordinatePin.bindPopup(`指定座標：${lon.toFixed(6)}, ${lat.toFixed(6)}`).openPopup();
+        map.setView([lat, lon], Math.max(map.getZoom(), 12));
+      }
+    }
+
     async function search(params) {
       const query = new URLSearchParams(params);
       try {
-        setStatus('查詢中...');
+        setStatus('搜尋中...');
         const data = await fetchJson(`/api/rainfall/search?${query.toString()}`);
         renderItems(data.items || [], data.updated_at);
         if (data.meta) {
-          setStatus(`查詢 ${JSON.stringify(data.meta)}，共 ${data.count || 0} 筆`);
+          setStatus(`依 ${JSON.stringify(data.meta)}，共 ${data.count || 0} 筆`);
         } else {
           setStatus(`共 ${data.count || 0} 筆`);
         }
+        if (params.type === 'coordinate') {
+          const lon = Number(params.lon);
+          const lat = Number(params.lat);
+          if (Number.isFinite(lon) && Number.isFinite(lat)) {
+            highlightCoordinate(lon, lat);
+          }
+        } else {
+          highlightCoordinate();
+        }
       } catch (err) {
         console.error(err);
-        setStatus('查詢失敗，請確認輸入或稍後再試');
+        setStatus('搜尋失敗，請稍後再試');
       }
     }
 
@@ -248,6 +271,7 @@
     const lonInput = document.getElementById('lon');
     const latInput = document.getElementById('lat');
     const pickBtn = document.getElementById('btnPickCoordinate');
+    const locateBtn = document.getElementById('btnLocate');
     let picking = false;
 
     toggleFiltersBtn.addEventListener('click', () => {
@@ -269,7 +293,37 @@
       latInput.value = lat.toFixed(6);
       pickBtn.textContent = '在地圖上點選座標';
       setStatus(`已選擇座標：${lng.toFixed(6)}, ${lat.toFixed(6)}`);
+      highlightCoordinate(lng, lat);
     });
+    if (locateBtn) {
+      const defaultLabel = locateBtn.textContent;
+      if (!('geolocation' in navigator)) {
+        locateBtn.disabled = true;
+        locateBtn.textContent = '定位不支援';
+      } else {
+        locateBtn.addEventListener('click', () => {
+          locateBtn.disabled = true;
+          locateBtn.textContent = '定位中...';
+          navigator.geolocation.getCurrentPosition(
+            ({ coords }) => {
+              const { longitude, latitude } = coords;
+              lonInput.value = longitude.toFixed(6);
+              latInput.value = latitude.toFixed(6);
+              setStatus(`已定位：${longitude.toFixed(6)}, ${latitude.toFixed(6)}`);
+              locateBtn.disabled = false;
+              locateBtn.textContent = defaultLabel;
+            },
+            (error) => {
+              console.error(error);
+              alert('定位失敗，請確認瀏覽器權限或改用地圖選取。');
+              locateBtn.disabled = false;
+              locateBtn.textContent = defaultLabel;
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+          );
+        });
+      }
+    }
 
     document.getElementById('btnReload').addEventListener('click', () => loadLatest());
 

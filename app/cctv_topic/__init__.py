@@ -28,8 +28,8 @@ from ..paths import CCTV_DATA_PATH
 CHECK_CCTV_TOPIC = "Check CCTV"
 _TRIGGERS = {"CCTV", "查CCTV", "查監視器", "CCTV查詢", "監視器查詢"}
 _MODE_LABELS = {
-    "CCTV查詢：座標": "coordinate",
-    "CCTV查詢：名稱": "name",
+    "CCTV查詢：位置": "coordinate",
+    "CCTV查詢：關鍵字": "name",
     "CCTV查詢：行政區": "district",
 }
 _CANCEL_KEYWORDS = {"取消", "結束", "退出", "取消CCTV查詢", "取消監視器查詢", "結束CCTV查詢", "退出CCTV查詢"}
@@ -189,11 +189,11 @@ def _coordinate_prompt() -> TextSendMessage:
             _cancel_button(),
         ]
     )
-    return TextSendMessage(text="請輸入經緯度（例如 121.446,24.925），或直接分享位置。", quick_reply=quick_reply)
+    return TextSendMessage(text="請直接分享位置，或輸入經緯度（例如 121.123,24.123）。", quick_reply=quick_reply)
 
 
 def _name_prompt() -> TextSendMessage:
-    return TextSendMessage(text="請輸入 CCTV 名稱或關鍵字，例：台76線 27K+390。")
+    return TextSendMessage(text="請輸入 CCTV 關鍵字（名稱、路段或代號），例：台76線 27K+390。")
 
 
 def _district_prompt() -> TextSendMessage:

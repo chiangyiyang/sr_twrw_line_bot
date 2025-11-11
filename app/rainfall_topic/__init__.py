@@ -23,8 +23,8 @@ CHECK_RAINFALL_TOPIC = "Check rainfall"
 _TRIGGERS = {"查雨量", "雨量站", "查詢雨量", "下雨嗎"}
 _CANCEL_KEYWORDS = {"取消雨量查詢", "取消", "結束", "退出"}
 _MODE_LABELS = {
-    "雨量查詢：座標": "coordinate",
-    "雨量查詢：測站": "station",
+    "雨量查詢：位置": "coordinate",
+    "雨量查詢：關鍵字": "station",
     "雨量查詢：行政區": "district",
 }
 _COORD_PATTERN = re.compile(r"[-+]?\d+(?:\.\d+)?")
@@ -63,7 +63,7 @@ def _build_entry_message() -> TextSendMessage:
     )
     quick_reply.items.append(_cancel_button())
     return TextSendMessage(
-        text="請選擇要查詢雨量的方式，可以依照座標、測站名稱或行政區查詢。",
+        text="請選擇要查詢雨量的方式，可以依照位置、關鍵字或行政區查詢。",
         quick_reply=quick_reply,
     )
 
@@ -76,14 +76,14 @@ def _coordinate_prompt() -> TextSendMessage:
         ]
     )
     return TextSendMessage(
-        text="請輸入經度與緯度，例如「121.446,24.925」，或直接分享位置。",
+        text="請直接分享位置，或輸入經緯度，例如「121.123,24.123」。",
         quick_reply=quick_reply,
     )
 
 
 def _station_prompt() -> TextSendMessage:
     return TextSendMessage(
-        text="請輸入測站名稱或測站代號，例如：建安國小 或 81AI10。",
+        text="請輸入關鍵字（測站名稱、代號或相關地點），例如：建安國小 或 81AI10。",
         quick_reply=QuickReply(items=[_cancel_button()]),
     )
 

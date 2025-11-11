@@ -3,15 +3,12 @@
 
 <head>
   <meta charset="utf-8" />
-  <title>事件分佈圖</title>
+  <title>事件熱度圖</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
   <style>
     html,
@@ -123,15 +120,6 @@
       min-height: 16px;
     }
 
-    .toggle-row {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 13px;
-      color: #333;
-      user-select: none;
-    }
-
     .hidden {
       display: none !important;
     }
@@ -166,11 +154,11 @@
     <div class="topbar-header">
       <div style="flex:1;">
         <div style="display:flex;align-items:center;gap:8px;">
-          <h1 style="flex:1;margin-bottom:4px;">事件分佈圖</h1>
+          <h1 style="flex:1;margin-bottom:4px;">事件熱度圖</h1>
           <button id="btnReload" class="secondary" title="重新載入事件資料">重新載入</button>
           <button id="btnToggleFilters" class="secondary" title="收合或展開查詢面板">-</button>
         </div>
-        <p>即時呈現 LINE 回報事件，可依事件 ID、類型、路線與座標快速定位。</p>
+        <p>專注於事件熱度分佈，依類型、路線、時間與範圍快速觀察近期災情集中區域。</p>
       </div>
     </div>
     <div id="extraFilters" class="controls">
@@ -208,14 +196,11 @@
         </div>
         <div class="hint">輸入經緯度後，可搭配範圍條件過濾資料並重新整理。</div>
       </div>
-      <div class="toggle-row">
-        <label for="toggleHeatmap">顯示熱度圖
-          <input type="checkbox" id="toggleHeatmap" />
-        </label>
-      </div>
       <span id="summary" class="summary"></span>
-      <button id="btnClearFilters" class="secondary full" type="button">清除條件</button>
-      <button id="btnApplyFilters" class="full">套用條件</button>
+      <div class="inline-inputs">
+        <button id="btnClearFilters" class="secondary full" type="button">清除條件</button>
+        <button id="btnApplyFilters" class="full">套用條件</button>
+      </div>
     </div>
     <datalist id="eventTypeOptions">
       <option value="土石滑落"></option>
@@ -242,15 +227,12 @@
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    const markers = L.markerClusterGroup();
-    map.addLayer(markers);
     const heatLayer = L.heatLayer([], {
       radius: 35,
       blur: 22,
       maxZoom: 13,
       minOpacity: 0.25,
-    });
-    let heatEnabled = false;
+    }).addTo(map);
     let latestHeatPoints = [];
 
     const statusEl = document.getElementById('status');
@@ -265,7 +247,6 @@
     const lonInput = document.getElementById('lonInput');
     const latInput = document.getElementById('latInput');
     const rangeInput = document.getElementById('rangeKm');
-    const heatToggle = document.getElementById('toggleHeatmap');
 
     const urlParams = new URLSearchParams(window.location.search);
     const initialEventId = urlParams.get('event_id');
@@ -323,10 +304,6 @@
       return typeof value === 'number' ? value.toFixed(6) : '';
     }
 
-    function toRadians(value) {
-      return (value * Math.PI) / 180;
-    }
-
     function formatDateInput(date) {
       const pad = (n) => n.toString().padStart(2, '0');
       return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
@@ -355,15 +332,6 @@
       return formatDateInput(parsed);
     }
 
-    function formatDisplayDate(value) {
-      if (!value) return '';
-      const normalized = sanitizeDateValue(value);
-      if (!normalized) return '';
-      const [datePart, timePart] = normalized.split('T');
-      const [year, month, day] = datePart.split('-');
-      return `${year}/${month}/${day} ${timePart}`;
-    }
-
     function describeTimeRange(start, end) {
       const startText = formatDisplayDate(start);
       const endText = formatDisplayDate(end);
@@ -371,6 +339,15 @@
       if (startText) return `自 ${startText}`;
       if (endText) return `至 ${endText}`;
       return '';
+    }
+
+    function formatDisplayDate(value) {
+      if (!value) return '';
+      const normalized = sanitizeDateValue(value);
+      if (!normalized) return '';
+      const [datePart, timePart] = normalized.split('T');
+      const [year, month, day] = datePart.split('-');
+      return `${year}/${month}/${day} ${timePart}`;
     }
 
     function setStatus(text) {
@@ -460,13 +437,17 @@
       return R * c;
     }
 
-    function buildSummary(meta, plottedCount) {
+    function toRadians(value) {
+      return (value * Math.PI) / 180;
+    }
+
+    function buildSummary(meta, heatCount) {
       if (!meta) {
-        return `已載入 ${plottedCount} 筆事件。`;
+        return `已載入 ${heatCount} 筆事件。`;
       }
       if (meta.eventId) {
-        if (plottedCount) {
-          return `顯示事件 ID：${meta.eventId}（已定位 ${plottedCount} 筆）`;
+        if (heatCount) {
+          return `顯示事件 ID：${meta.eventId}（熱度圖共 ${heatCount} 筆座標）`;
         }
         return `顯示事件 ID：${meta.eventId}（缺少經緯度資訊）`;
       }
@@ -483,97 +464,41 @@
           parts.push(`範圍：${meta.rangeKm} 公里（未套用，請輸入經緯度）`);
         }
       }
-      parts.push(`地圖顯示 ${plottedCount} 筆`);
+      parts.push(`熱度圖顯示 ${heatCount} 筆座標`);
       return parts.join(' ｜ ');
     }
 
-    function syncHeatLayer() {
-      heatLayer.setLatLngs(latestHeatPoints);
-      if (heatEnabled) {
-        if (!map.hasLayer(heatLayer)) {
-          heatLayer.addTo(map);
-        }
-      } else if (map.hasLayer(heatLayer)) {
-        map.removeLayer(heatLayer);
-      }
-    }
-
     function render(items, { center, meta } = {}) {
-      markers.clearLayers();
-      const plotted = [];
-      items.forEach((item) => {
-        if (!hasCoordinates(item)) {
-          return;
-        }
-        const marker = L.marker([item.latitude, item.longitude]).bindPopup(toPopup(item));
-        markers.addLayer(marker);
-        plotted.push(marker);
-      });
-
       const heatPoints = buildHeatmapPoints(items);
       latestHeatPoints = heatPoints;
-      syncHeatLayer();
+      heatLayer.setLatLngs(latestHeatPoints);
 
       if (center) {
         focusOnCoordinate(center.lon, center.lat);
-      } else if (plotted.length) {
-        const group = L.featureGroup(plotted);
-        map.fitBounds(group.getBounds().pad(0.12));
+      } else if (heatPoints.length) {
+        const bounds = L.latLngBounds(heatPoints.map(([lat, lon]) => [lat, lon]));
+        map.fitBounds(bounds.pad(0.12));
       }
 
-      setSummary(buildSummary(meta, plotted.length));
+      setSummary(buildSummary(meta, heatPoints.length));
 
       if (!items.length) {
         setStatus(meta?.eventId ? `事件 ID ${meta.eventId} 缺少符合條件的資料。` : '尚未找到符合條件的事件。');
         return;
       }
 
-      if (!plotted.length) {
-        setStatus('事件存在但缺少經緯度，無法於地圖顯示。');
+      if (!heatPoints.length) {
+        setStatus('事件存在但缺少經緯度，無法生成熱度圖。');
         return;
       }
 
       if (meta?.eventId) {
-        setStatus(`事件 ID ${meta.eventId} 已載入，點擊圖標可查看詳細資訊。`);
+        setStatus(`事件 ID ${meta.eventId} 已載入。`);
       } else if (meta?.rangeApplied && meta.rangeKm && meta.rangeCenter) {
-        setStatus(`距離 ${meta.rangeKm} 公里內共 ${plotted.length} 筆事件（原始 ${meta.totalFetched} 筆）。`);
+        setStatus(`距離 ${meta.rangeKm} 公里內共 ${heatPoints.length} 筆事件（原始 ${meta.totalFetched} 筆）。`);
       } else {
-        setStatus(`已載入 ${plotted.length} 筆事件${meta ? `（API 回傳 ${meta.totalFetched} 筆）` : ''}。`);
+        setStatus(`熱度圖呈現 ${heatPoints.length} 筆事件。`);
       }
-    }
-
-    function toPopup(item) {
-      const segments = [];
-      segments.push(`<div><strong>事件 ID：${item.id ?? '-'}</strong></div>`);
-      segments.push(`<div>${item.event_type || '-'}｜${item.route_line || '-'}｜${item.track_side || '-'}</div>`);
-      if (item.mileage_text) {
-        segments.push(`<div>里程：${item.mileage_text}</div>`);
-      }
-      if (hasCoordinates(item)) {
-        segments.push(`<div>座標：${item.longitude.toFixed(5)}, ${item.latitude.toFixed(5)}</div>`);
-      }
-      if (item.location_title || item.location_address) {
-        const desc = [item.location_title, item.location_address].filter(Boolean).join(' / ');
-        segments.push(`<div>位置描述：${desc}</div>`);
-      }
-      if (item.created_at) {
-        segments.push(`<div>建立時間：${item.created_at}</div>`);
-      }
-      const photoList = Array.isArray(item.photo_filenames) && item.photo_filenames.length
-        ? item.photo_filenames
-        : (item.photo_filename ? [item.photo_filename] : []);
-      const firstPhoto = photoList[0];
-      if (firstPhoto) {
-        const photoUrl = /^https?:\/\//i.test(firstPhoto)
-          ? firstPhoto
-          : `/events/pictures/${encodeURIComponent(firstPhoto)}`;
-        segments.push(`
-          <a href="${photoUrl}" target="_blank" rel="noopener" style="display:block;margin-top:6px;text-align:center;">
-            <img src="${photoUrl}" alt="事件照片" style="display:inline-block;margin:0 auto;border-radius:6px;max-width:100%;max-height:300px;height:auto;width:auto;" />
-          </a>
-        `);
-      }
-      return segments.join('');
     }
 
     function buildHeatmapPoints(items) {
@@ -636,7 +561,7 @@
         setStatus(eventId ? `載入事件 ID ${eventId} 中…` : '載入事件列表中…');
         const items = await fetchEvents({ eventId, filters: eventId ? {} : api });
         if (eventId && items.length === 0) {
-          markers.clearLayers();
+          heatLayer.setLatLngs([]);
           setSummary('');
           setStatus(`找不到事件 ID ${eventId}，請確認後再試。`);
           return;
@@ -735,6 +660,7 @@
       }
       const filters = persistFilterParams();
       const eventId = toEventId(eventIdInput.value);
+      focusOnCoordinate(lon, lat);
       loadEvents({ eventId, center: { lon, lat }, presetFilters: filters });
     });
 
@@ -752,12 +678,6 @@
       });
       setStatus('已清除查詢條件，重新載入中…');
       loadEvents({ presetFilters: collectFilters() });
-    });
-
-    heatToggle.addEventListener('change', () => {
-      heatEnabled = heatToggle.checked;
-      syncHeatLayer();
-      setStatus(heatEnabled ? '熱度圖已開啟。' : '熱度圖已關閉。');
     });
 
     toggleBtn.addEventListener('click', () => {

@@ -77,12 +77,12 @@ def health():
 
 @app.get("/rainfall.html")
 def rainfall_page():
-    return send_from_directory(str(STATIC_DIR), "rainfall.html")
+    return _send_html("rainfall.html")
 
 
 @app.get("/cctv.html")
 def cctv_page():
-    return send_from_directory(str(STATIC_DIR), "cctv.html")
+    return _send_html("cctv.html")
 
 
 @app.get("/cctv_data.json")
@@ -92,12 +92,17 @@ def cctv_data():
 
 @app.get("/events.html")
 def events_page():
-    return send_from_directory(str(STATIC_DIR), "events.html")
+    return _send_html("events.html")
+
+
+@app.get("/events_heatmap.html")
+def events_heatmap_page():
+    return _send_html("events_heatmap.html")
 
 
 @app.get("/login.html")
 def login_page():
-    return send_from_directory(str(STATIC_DIR), "login.html")
+    return _send_html("login.html")
 
 
 @app.get("/events/pictures/<path:filename>")
@@ -108,13 +113,13 @@ def event_picture(filename: str):
 @app.get("/events_admin.html")
 @login_required
 def events_admin_page():
-    return send_from_directory(str(STATIC_DIR), "events_admin.html")
+    return _send_html("events_admin.html")
 
 
 @app.get("/audit_logs.html")
 @login_required
 def audit_logs_page():
-    return send_from_directory(str(STATIC_DIR), "audit_logs.html")
+    return _send_html("audit_logs.html")
 
 
 @app.post("/callback")
@@ -305,11 +310,11 @@ def handle_text_message(event: MessageEvent):
     if current_topic is None:
         helper_quick_reply = QuickReply(
             items=[
-                QuickReplyButton(action=MessageAction(label="查雨量", text="查雨量")),
-                QuickReplyButton(action=MessageAction(label="里程轉座標", text="里程轉座標")),
-                QuickReplyButton(action=MessageAction(label="座標轉里程", text="座標轉里程")),
-                QuickReplyButton(action=MessageAction(label="CCTV", text="CCTV")),
                 QuickReplyButton(action=MessageAction(label="回報事件", text="回報事件")),
+                QuickReplyButton(action=MessageAction(label="查雨量", text="查雨量")),
+                # QuickReplyButton(action=MessageAction(label="里程轉座標", text="里程轉座標")),
+                # QuickReplyButton(action=MessageAction(label="座標轉里程", text="座標轉里程")),
+                QuickReplyButton(action=MessageAction(label="CCTV", text="CCTV")),
                 QuickReplyButton(action=MessageAction(label="取消", text="取消")),
             ]
         )
@@ -425,3 +430,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+def _send_html(filename: str):
+    response = send_from_directory(str(STATIC_DIR), filename)
+    response.headers.setdefault("Content-Type", "text/html; charset=utf-8")
+    return response
