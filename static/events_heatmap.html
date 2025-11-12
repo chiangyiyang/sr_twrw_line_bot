@@ -34,7 +34,7 @@
       border-radius: 10px;
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
       width: 340px;
-      max-width: calc(100% - 20px);
+      max-width: calc(100% - 40px);
     }
 
     .topbar-header {
@@ -304,32 +304,71 @@
       return typeof value === 'number' ? value.toFixed(6) : '';
     }
 
+    const MS_PER_MINUTE = 60 * 1000;
+    const TAIPEI_OFFSET_MINUTES = 8 * 60;
+    const TAIPEI_OFFSET_MS = TAIPEI_OFFSET_MINUTES * MS_PER_MINUTE;
+    const DATE_TIME_INPUT_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
+    const DATE_TIME_FALLBACK_PATTERN = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::\d{2})?$/;
+    const UTC_TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(?:Z)?$/i;
+
+    function pad2(value) {
+      return value.toString().padStart(2, '0');
+    }
+
     function formatDateInput(date) {
-      const pad = (n) => n.toString().padStart(2, '0');
-      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+      const tzDate = new Date(date.getTime() + TAIPEI_OFFSET_MS);
+      return `${tzDate.getUTCFullYear()}-${pad2(tzDate.getUTCMonth() + 1)}-${pad2(tzDate.getUTCDate())}T${pad2(tzDate.getUTCHours())}:${pad2(tzDate.getUTCMinutes())}`;
     }
 
     function setDateInputValue(input, value) {
-      if (!value) return;
-      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) {
-        input.value = value;
-        return;
-      }
-      const parsed = new Date(value);
-      if (!Number.isNaN(parsed.getTime())) {
-        input.value = formatDateInput(parsed);
+      const sanitized = sanitizeDateValue(value);
+      if (sanitized) {
+        input.value = sanitized;
       }
     }
 
     function sanitizeDateValue(value) {
       const trimmed = (value || '').trim();
       if (!trimmed) return null;
-      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)) {
+      const direct = DATE_TIME_INPUT_PATTERN.exec(trimmed);
+      if (direct) {
         return trimmed;
       }
-      const parsed = new Date(trimmed);
-      if (Number.isNaN(parsed.getTime())) return null;
-      return formatDateInput(parsed);
+      const fallback = DATE_TIME_FALLBACK_PATTERN.exec(trimmed);
+      if (fallback) {
+        return `${fallback[1]}-${fallback[2]}-${fallback[3]}T${fallback[4]}:${fallback[5]}`;
+      }
+      const parsed = Date.parse(trimmed);
+      if (Number.isNaN(parsed)) return null;
+      return formatDateInput(new Date(parsed));
+    }
+
+    function normalizedLocalToUtcDate(normalized) {
+      if (!normalized) return null;
+      const match = DATE_TIME_INPUT_PATTERN.exec(normalized);
+      if (!match) return null;
+      const year = Number(match[1]);
+      const month = Number(match[2]) - 1;
+      const day = Number(match[3]);
+      const hour = Number(match[4]);
+      const minute = Number(match[5]);
+      const utcMs = Date.UTC(year, month, day, hour, minute);
+      return new Date(utcMs - TAIPEI_OFFSET_MS);
+    }
+
+    function formatUtcForApi(date) {
+      if (!date) return null;
+      return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}T${pad2(date.getUTCHours())}:${pad2(date.getUTCMinutes())}Z`;
+    }
+
+    function localInputToUtcString(normalized) {
+      const utcDate = normalizedLocalToUtcDate(normalized);
+      return utcDate ? formatUtcForApi(utcDate) : null;
+    }
+
+    function localInputToUtcMillis(normalized) {
+      const utcDate = normalizedLocalToUtcDate(normalized);
+      return utcDate ? utcDate.getTime() : null;
     }
 
     function describeTimeRange(start, end) {
@@ -342,12 +381,29 @@
     }
 
     function formatDisplayDate(value) {
-      if (!value) return '';
       const normalized = sanitizeDateValue(value);
       if (!normalized) return '';
-      const [datePart, timePart] = normalized.split('T');
-      const [year, month, day] = datePart.split('-');
-      return `${year}/${month}/${day} ${timePart}`;
+      const match = DATE_TIME_INPUT_PATTERN.exec(normalized);
+      if (!match) return normalized.replace('T', ' ');
+      return `${match[1]}/${match[2]}/${match[3]} ${match[4]}:${match[5]}`;
+    }
+
+    function parseUtcTimestamp(value) {
+      if (!value) return null;
+      const trimmed = value.trim();
+      const match = UTC_TIMESTAMP_PATTERN.exec(trimmed);
+      if (match) {
+        const year = Number(match[1]);
+        const month = Number(match[2]) - 1;
+        const day = Number(match[3]);
+        const hour = Number(match[4]);
+        const minute = Number(match[5]);
+        const second = Number(match[6] || '0');
+        return new Date(Date.UTC(year, month, day, hour, minute, second));
+      }
+      const parsed = Date.parse(trimmed);
+      if (Number.isNaN(parsed)) return null;
+      return new Date(parsed);
     }
 
     function setStatus(text) {
@@ -375,16 +431,20 @@
     function collectFilters() {
       const eventType = (eventTypeInput.value || '').trim();
       const routeLine = (routeLineInput.value || '').trim();
-      const startTime = sanitizeDateValue(startTimeInput.value);
-      const endTime = sanitizeDateValue(endTimeInput.value);
+      const startTimeLocal = sanitizeDateValue(startTimeInput.value);
+      const endTimeLocal = sanitizeDateValue(endTimeInput.value);
       const center = parseCenter(lonInput.value, latInput.value);
       const rangeKm = toPositiveNumber(rangeInput.value);
       return {
         api: {
           event_type: eventType || null,
           route_line: routeLine || null,
-          start_time: startTime,
-          end_time: endTime,
+          start_time: localInputToUtcString(startTimeLocal),
+          end_time: localInputToUtcString(endTimeLocal),
+        },
+        display: {
+          start_time: startTimeLocal,
+          end_time: endTimeLocal,
         },
         center,
         rangeKm,
@@ -408,8 +468,8 @@
       updateQueryParams({
         event_type: resolved.api.event_type,
         route_line: resolved.api.route_line,
-        start_time: resolved.api.start_time,
-        end_time: resolved.api.end_time,
+        start_time: resolved.display?.start_time || null,
+        end_time: resolved.display?.end_time || null,
         lon: resolved.center ? formatCoord(resolved.center.lon) : null,
         lat: resolved.center ? formatCoord(resolved.center.lat) : null,
         range_km: resolved.rangeKm ?? null,
@@ -515,9 +575,9 @@
 
     function computeHeatWeight(createdAt, nowTs) {
       if (!createdAt) return 0;
-      const ts = Date.parse(createdAt);
-      if (Number.isNaN(ts)) return 0;
-      const diffMs = Math.max(0, nowTs - ts);
+      const date = parseUtcTimestamp(createdAt);
+      if (!date) return 0;
+      const diffMs = Math.max(0, nowTs - date.getTime());
       const diffDays = diffMs / (1000 * 60 * 60 * 24);
       if (diffDays <= 1) {
         return 1;
@@ -555,7 +615,7 @@
 
     async function loadEvents({ eventId = null, center = null, presetFilters = null } = {}) {
       const filters = presetFilters || collectFilters();
-      const { api, center: filterCenter, rangeKm } = filters;
+      const { api, display, center: filterCenter, rangeKm } = filters;
       currentEventId = eventId;
       try {
         setStatus(eventId ? `載入事件 ID ${eventId} 中…` : '載入事件列表中…');
@@ -581,8 +641,8 @@
             totalFetched: items.length,
             eventType: api.event_type,
             routeLine: api.route_line,
-            startTime: api.start_time,
-            endTime: api.end_time,
+            startTime: display?.start_time || null,
+            endTime: display?.end_time || null,
             rangeKm,
             rangeCenter,
             rangeApplied,
@@ -625,7 +685,9 @@
 
     document.getElementById('btnApplyFilters').addEventListener('click', () => {
       const filters = collectFilters();
-      if (filters.api.start_time && filters.api.end_time && filters.api.start_time > filters.api.end_time) {
+      const startMs = localInputToUtcMillis(filters.display.start_time);
+      const endMs = localInputToUtcMillis(filters.display.end_time);
+      if (startMs !== null && endMs !== null && startMs > endMs) {
         setStatus('時間範圍不正確，請確認起訖順序。');
         return;
       }

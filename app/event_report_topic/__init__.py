@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import mimetypes
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from uuid import uuid4
 
@@ -28,8 +28,10 @@ from .. import state
 from . import repository
 from .models import ReportEventRecord
 from .public import get_public_page_url
+from ..location_topic import format_distance_marker, resolve_route_coordinate
 from ..paths import EVENT_PICTURES_DIR
 from ..audit_log import record_action as audit_record_action
+from .photos import serialize_photo_field
 
 
 REPORT_EVENT_TOPIC = "Report event"
@@ -39,10 +41,15 @@ _CONFIRM_YES = {"是", "是的", "確認", "沒問題", "ok", "ok的", "ＯＫ"}
 _CONFIRM_NO = {"否", "不是", "重新輸入", "不正確", "否定"}
 
 _EVENT_TYPES = ["土石滑落", "落石", "路樹侵入", "其他"]
+_LOCATION_METHOD_OPTIONS = ["軌道里程", "位置座標"]
 _ROUTE_LINES = ["平溪線", "深澳線", "宜蘭線", "北迴線"]
-_TRACK_SIDES = ["東正線", "西正線"]
+_ROUTE_LINES_LEFT_RIGHT = {"平溪線", "深澳線"}
+_ROUTE_LINES_EAST_WEST = {"宜蘭線", "北迴線"}
+_LEFT_RIGHT_CHOICES = ["左", "右"]
+_EAST_WEST_CHOICES = ["東", "西"]
 _MILEAGE_PATTERN = re.compile(r"^(?:k|K)?\s*(\d+)(?:\+(\d+))?$")
 _COORD_PATTERN = re.compile(r"[-+]?\d+(?:\.\d+)?")
+_PHOTO_DONE_KEYWORDS = {"完成", "完成上傳", "上傳完成", "好了", "結束上傳"}
 
 _PICTURE_DIR = EVENT_PICTURES_DIR
 
@@ -80,6 +87,7 @@ _TRIGGER_TOKENS = {_normalize_text(item) for item in _TRIGGERS}
 _CANCEL_TOKENS = {_normalize_text(item) for item in _CANCEL_KEYWORDS}
 _CONFIRM_YES_TOKENS = {_normalize_text(item) for item in _CONFIRM_YES}
 _CONFIRM_NO_TOKENS = {_normalize_text(item) for item in _CONFIRM_NO}
+_PHOTO_DONE_TOKENS = {_normalize_text(item) for item in _PHOTO_DONE_KEYWORDS}
 
 
 def _cancel_button() -> QuickReplyButton:
@@ -100,16 +108,16 @@ def _confirm_quick_reply() -> QuickReply:
 class Session:
     stage: str
     event_type: Optional[str] = None
+    location_mode: Optional[str] = None
     route_line: Optional[str] = None
     track_side: Optional[str] = None
     mileage_text: Optional[str] = None
     mileage_meters: Optional[float] = None
-    photo_filename: Optional[str] = None
+    photo_filenames: List[str] = field(default_factory=list)
     longitude: Optional[float] = None
     latitude: Optional[float] = None
     location_title: Optional[str] = None
     location_address: Optional[str] = None
-    location_prompted: bool = False
 
 
 _SESSIONS: Dict[str, Session] = {}
@@ -160,78 +168,100 @@ def _start_session(event: MessageEvent, line_bot_api: LineBotApi) -> None:
     )
 
 
-def _prompt_route_line(event: MessageEvent, line_bot_api: LineBotApi) -> None:
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(
-            text="請選擇路線別：",
-            quick_reply=_build_quick_reply(_ROUTE_LINES),
-        ),
-    )
-
-
-def _prompt_track_side(event: MessageEvent, line_bot_api: LineBotApi) -> None:
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(
-            text="請選擇邊別／正線：",
-            quick_reply=_build_quick_reply(_TRACK_SIDES),
-        ),
-    )
-
-
-def _prompt_mileage(event: MessageEvent, line_bot_api: LineBotApi) -> None:
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text="請輸入里程 K 值（例如：10+100 或 K10+100）："),
-    )
-
-
-def _prompt_photo(event: MessageEvent, line_bot_api: LineBotApi) -> None:
+def _prompt_location_method(event: MessageEvent, line_bot_api: LineBotApi) -> None:
     quick_reply = QuickReply(
         items=[
-            QuickReplyButton(action=CameraAction(label="拍照")),
-            QuickReplyButton(action=CameraRollAction(label="相簿")),
-            _cancel_button(),
+            QuickReplyButton(action=MessageAction(label=option, text=option))
+            for option in _LOCATION_METHOD_OPTIONS
         ]
+        + [_cancel_button()]
     )
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(
-            text="請拍照或從相簿選取一張照片作為佐證：",
+            text="請分享事件地點：",
             quick_reply=quick_reply,
         ),
     )
 
 
-def _prompt_location(
-    event: MessageEvent,
-    line_bot_api: LineBotApi,
-    session: Session,
-    *,
-    include_ack: bool = False,
-    force: bool = False,
-) -> None:
+def _prompt_coordinate_input(event: MessageEvent, line_bot_api: LineBotApi) -> None:
     quick_reply = QuickReply(
         items=[
             QuickReplyButton(action=LocationAction(label="分享位置")),
             _cancel_button(),
         ]
     )
-    if session.location_prompted and not force:
-        return
-    prefix = "已收到照片，" if include_ack else ""
-    text = (
-        f"{prefix}請分享現場位置（可使用「分享位置」按鈕，或輸入經緯度，例如 121.123,24.456）。"
-    )
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(
-            text=text,
+            text="請分享位置或輸入經緯度座標（例如 121.123, 24.123）：",
             quick_reply=quick_reply,
         ),
     )
-    session.location_prompted = True
+
+
+def _prompt_route_line(event: MessageEvent, line_bot_api: LineBotApi) -> None:
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(
+            text="請選擇軌道路線別：",
+            quick_reply=_build_quick_reply(_ROUTE_LINES),
+        ),
+    )
+
+
+def _prompt_track_side(event: MessageEvent, line_bot_api: LineBotApi, route_line: str) -> None:
+    if route_line in _ROUTE_LINES_LEFT_RIGHT:
+        text = "請選擇邊別："
+        options = _LEFT_RIGHT_CHOICES
+    elif route_line in _ROUTE_LINES_EAST_WEST:
+        text = "請選擇正線："
+        options = _EAST_WEST_CHOICES
+    else:
+        text = "請選擇邊別／正線："
+        options = _EAST_WEST_CHOICES
+
+    quick_reply = QuickReply(
+        items=[
+            QuickReplyButton(action=MessageAction(label=item, text=item))
+            for item in options
+        ]
+        + [_cancel_button()]
+    )
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text=text, quick_reply=quick_reply),
+    )
+
+
+def _prompt_mileage(event: MessageEvent, line_bot_api: LineBotApi) -> None:
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text="請輸入里程（例如 K10+100 或 10+100）："),
+    )
+
+
+def _photo_quick_reply() -> QuickReply:
+    return QuickReply(
+        items=[
+            QuickReplyButton(action=CameraAction(label="拍照")),
+            QuickReplyButton(action=CameraRollAction(label="相簿")),
+            QuickReplyButton(action=MessageAction(label="完成", text="完成")),
+            _cancel_button(),
+        ]
+    )
+
+
+def _prompt_photo(event: MessageEvent, line_bot_api: LineBotApi) -> None:
+    quick_reply = _photo_quick_reply()
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(
+            text="請上傳照片（完成後可輸入「完成」繼續）：",
+            quick_reply=quick_reply,
+        ),
+    )
 
 
 def _reply_with_summary(event: MessageEvent, line_bot_api: LineBotApi, session: Session) -> None:
@@ -245,11 +275,13 @@ def _reply_with_summary(event: MessageEvent, line_bot_api: LineBotApi, session: 
 
 
 def _format_summary(session: Session) -> str:
-    photo_text = "[*]" if session.photo_filename else "[-]"
     if session.longitude is not None and session.latitude is not None:
         coord_text = f"{session.longitude:.5f}, {session.latitude:.5f}"
     else:
         coord_text = "-/-"
+
+    photo_count = len(session.photo_filenames)
+    photo_text = f"{photo_count} 張" if photo_count else "-"
 
     lines = [
         f"事件類型：{session.event_type or '-'}",
@@ -307,8 +339,25 @@ def _handle_event_type(event: MessageEvent, session: Session, incoming_text: str
         )
         return True
     session.event_type = incoming_text
-    session.stage = "route_line"
-    _prompt_route_line(event, line_bot_api)
+    session.stage = "location_method"
+    _prompt_location_method(event, line_bot_api)
+    return True
+
+
+def _handle_location_method(event: MessageEvent, session: Session, incoming_text: str, line_bot_api: LineBotApi) -> bool:
+    if incoming_text not in _LOCATION_METHOD_OPTIONS:
+        _prompt_location_method(event, line_bot_api)
+        return True
+
+    if incoming_text == "軌道里程":
+        session.location_mode = "route"
+        session.stage = "route_line"
+        _prompt_route_line(event, line_bot_api)
+        return True
+
+    session.location_mode = "coordinates"
+    session.stage = "coordinate"
+    _prompt_coordinate_input(event, line_bot_api)
     return True
 
 
@@ -318,21 +367,50 @@ def _handle_route_line(event: MessageEvent, session: Session, incoming_text: str
         return True
     session.route_line = incoming_text
     session.stage = "track_side"
-    _prompt_track_side(event, line_bot_api)
+    _prompt_track_side(event, line_bot_api, session.route_line)
     return True
 
 
 def _handle_track_side(event: MessageEvent, session: Session, incoming_text: str, line_bot_api: LineBotApi) -> bool:
-    if incoming_text not in _TRACK_SIDES:
-        _prompt_track_side(event, line_bot_api)
+    if not session.route_line:
+        session.stage = "route_line"
+        _prompt_route_line(event, line_bot_api)
         return True
-    session.track_side = incoming_text
+
+    route_line = session.route_line
+    choices = _LEFT_RIGHT_CHOICES if route_line in _ROUTE_LINES_LEFT_RIGHT else _EAST_WEST_CHOICES
+    normalized = incoming_text.strip()
+    selected: Optional[str] = None
+    for option in choices:
+        if normalized == option:
+            selected = option
+            break
+        if normalized in {f"{option}線", f"{option}側", f"{option}正線"}:
+            selected = option
+            break
+
+    if selected is None:
+        _prompt_track_side(event, line_bot_api, route_line)
+        return True
+
+    if route_line in _ROUTE_LINES_LEFT_RIGHT:
+        session.track_side = f"{selected}側"
+    else:
+        session.track_side = f"{selected}正線"
+
     session.stage = "mileage"
     _prompt_mileage(event, line_bot_api)
     return True
 
 
 def _handle_mileage(event: MessageEvent, session: Session, incoming_text: str, line_bot_api: LineBotApi) -> bool:
+    if session.location_mode != "route":
+        session.location_mode = "route"
+    if not session.route_line:
+        session.stage = "route_line"
+        _prompt_route_line(event, line_bot_api)
+        return True
+
     mileage_text, mileage_meters = _parse_mileage(incoming_text)
     if mileage_text is None:
         line_bot_api.reply_message(
@@ -342,22 +420,67 @@ def _handle_mileage(event: MessageEvent, session: Session, incoming_text: str, l
         return True
     session.mileage_text = mileage_text
     session.mileage_meters = mileage_meters
+    marker_text = (
+        format_distance_marker(mileage_meters) if mileage_meters is not None else f"K{mileage_text}"
+    )
+    coords = resolve_route_coordinate(session.route_line, marker_text)
+    if not coords:
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="查無該里程座標，請確認輸入範圍後再試一次。"),
+        )
+        return True
+
+    line_name, resolved_distance, longitude, latitude = coords
+    session.route_line = line_name
+    session.mileage_meters = resolved_distance
+    session.longitude = longitude
+    session.latitude = latitude
+    session.location_title = None
+    session.location_address = None
     session.stage = "photo"
     _prompt_photo(event, line_bot_api)
     return True
 
 
-def _handle_location_text(event: MessageEvent, session: Session, incoming_text: str, line_bot_api: LineBotApi) -> bool:
+def _handle_coordinate_text(event: MessageEvent, session: Session, incoming_text: str, line_bot_api: LineBotApi) -> bool:
     lon, lat = _parse_coordinate_text(incoming_text)
     if lon is None or lat is None:
-        _prompt_location(event, line_bot_api, session, force=True)
+        _prompt_coordinate_input(event, line_bot_api)
         return True
     session.longitude = lon
     session.latitude = lat
     session.location_title = None
     session.location_address = None
-    session.stage = "confirm"
-    _reply_with_summary(event, line_bot_api, session)
+    session.location_mode = "coordinates"
+    session.stage = "photo"
+    _prompt_photo(event, line_bot_api)
+    return True
+
+
+def _handle_photo_stage_text(event: MessageEvent, session: Session, incoming_text: str, line_bot_api: LineBotApi) -> bool:
+    normalized = _normalize_text(incoming_text)
+    if normalized in _PHOTO_DONE_TOKENS:
+        if not session.photo_filenames:
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(
+                    text="請先上傳至少一張照片，再輸入「完成」。",
+                    quick_reply=_photo_quick_reply(),
+                ),
+            )
+            return True
+        session.stage = "confirm"
+        _reply_with_summary(event, line_bot_api, session)
+        return True
+
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(
+            text="請先上傳照片，完成後輸入「完成」或直接再傳照片。",
+            quick_reply=_photo_quick_reply(),
+        ),
+    )
     return True
 
 
@@ -371,7 +494,7 @@ def _handle_confirmation(event: MessageEvent, session: Session, incoming_text: s
             track_side=session.track_side or "",
             mileage_text=session.mileage_text or "",
             mileage_meters=session.mileage_meters,
-            photo_filename=session.photo_filename,
+            photo_filename=serialize_photo_field(session.photo_filenames),
             longitude=session.longitude,
             latitude=session.latitude,
             location_title=session.location_title,
@@ -481,20 +604,18 @@ def handle_message_event(event: MessageEvent, line_bot_api: LineBotApi) -> bool:
 
     if session.stage == "event_type":
         return _handle_event_type(event, session, incoming_text, line_bot_api)
+    if session.stage == "location_method":
+        return _handle_location_method(event, session, incoming_text, line_bot_api)
     if session.stage == "route_line":
         return _handle_route_line(event, session, incoming_text, line_bot_api)
     if session.stage == "track_side":
         return _handle_track_side(event, session, incoming_text, line_bot_api)
     if session.stage == "mileage":
         return _handle_mileage(event, session, incoming_text, line_bot_api)
+    if session.stage == "coordinate":
+        return _handle_coordinate_text(event, session, incoming_text, line_bot_api)
     if session.stage == "photo":
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="請先傳送照片，才能繼續下一步。"),
-        )
-        return True
-    if session.stage == "location":
-        return _handle_location_text(event, session, incoming_text, line_bot_api)
+        return _handle_photo_stage_text(event, session, incoming_text, line_bot_api)
     if session.stage == "confirm":
         return _handle_confirmation(event, session, incoming_text, line_bot_api)
     return False
@@ -553,23 +674,31 @@ def handle_image_message(event: MessageEvent, line_bot_api: LineBotApi) -> bool:
         )
         return True
 
-    session.photo_filename = filename
-    session.stage = "location"
-    _prompt_location(event, line_bot_api, session, include_ack=True)
+    session.photo_filenames.append(filename)
+    count = len(session.photo_filenames)
+    quick_reply = _photo_quick_reply()
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(
+            text=f"已收到第 {count} 張照片。若需要繼續請再上傳，完成請輸入「完成」。",
+            quick_reply=quick_reply,
+        ),
+    )
     return True
 
 
 def handle_location_message(event: MessageEvent, line_bot_api: LineBotApi) -> bool:
     session = _get_session(event)
-    if session is None or session.stage not in {"location", "confirm"}:
+    if session is None or session.stage != "coordinate":
         return False
 
     session.longitude = event.message.longitude
     session.latitude = event.message.latitude
     session.location_title = event.message.title
     session.location_address = event.message.address
-    session.stage = "confirm"
-    _reply_with_summary(event, line_bot_api, session)
+    session.location_mode = "coordinates"
+    session.stage = "photo"
+    _prompt_photo(event, line_bot_api)
     return True
 
 

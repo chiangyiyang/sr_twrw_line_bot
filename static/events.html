@@ -37,7 +37,7 @@
       border-radius: 10px;
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
       width: 340px;
-      max-width: calc(100% - 20px);
+      max-width: calc(100% - 40px);
     }
 
     .topbar-header {
@@ -103,6 +103,30 @@
       flex-wrap: wrap;
     }
 
+    .inline-inputs.single-row {
+      flex-wrap: nowrap;
+      align-items: stretch;
+    }
+
+    .inline-inputs.single-row.align-center {
+      align-items: center;
+    }
+
+    .inline-inputs.single-row .flex-grow {
+      flex: 1 1 auto;
+      min-height: 24px;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .inline-inputs.single-row button {
+      white-space: nowrap;
+    }
+
+    .inline-inputs.single-row .btn-equal {
+      flex: 1 1 0;
+    }
+
     .controls input {
       padding: 6px 10px;
       border-radius: 6px;
@@ -149,6 +173,39 @@
       max-width: 320px;
     }
 
+    .popup-photos {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+      justify-content: flex-start;
+    }
+
+    .popup-photo-link {
+      width: 72px;
+      height: 72px;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      background: #f4f4f4;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .popup-photo-link:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    }
+
+    .popup-photo-link img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
     @media (max-width: 600px) {
       .topbar {
         width: calc(100% - 20px);
@@ -156,6 +213,10 @@
 
       .inline-inputs {
         flex-direction: column;
+      }
+
+      .inline-inputs.single-row {
+        flex-direction: row;
       }
     }
   </style>
@@ -176,21 +237,21 @@
     <div id="extraFilters" class="controls">
       <div class="control-block">
         <label for="eventId">事件 ID</label>
-        <div class="inline-inputs">
+        <div class="inline-inputs single-row">
           <input type="number" id="eventId" placeholder="例如：125" min="1" step="1" />
-          <button id="btnSearchEvent" class="full">查詢事件</button>
+          <button id="btnSearchEvent">查詢事件</button>
         </div>
       </div>
       <div class="control-block">
         <label>事件條件</label>
-        <div class="inline-inputs">
+        <div class="inline-inputs single-row">
           <input type="text" id="eventType" list="eventTypeOptions" placeholder="事件類型" />
           <input type="text" id="routeLine" list="routeLineOptions" placeholder="路線別" />
         </div>
       </div>
       <div class="control-block">
         <label>時間範圍</label>
-        <div class="inline-inputs">
+        <div class="inline-inputs single-row">
           <input type="datetime-local" id="startTime" />
           <input type="datetime-local" id="endTime" />
         </div>
@@ -198,24 +259,26 @@
       </div>
       <div class="control-block">
         <label for="lonInput">指定經緯度</label>
-        <div class="inline-inputs">
+        <div class="inline-inputs single-row">
           <input type="text" id="lonInput" placeholder="經度 120.987" />
           <input type="text" id="latInput" placeholder="緯度 23.456" />
         </div>
-        <div class="inline-inputs">
+        <div class="inline-inputs single-row">
           <input type="number" id="rangeKm" placeholder="範圍 (公里)" min="1" step="1" />
-          <button id="btnCenterMap" class="secondary full">定位地圖</button>
+          <button id="btnCenterMap" class="secondary">定位地圖</button>
         </div>
         <div class="hint">輸入經緯度後，可搭配範圍條件過濾資料並重新整理。</div>
       </div>
-      <div class="toggle-row">
-        <label for="toggleHeatmap">顯示熱度圖
+      <div class="inline-inputs single-row align-center">
+        <label class="toggle-row" for="toggleHeatmap">顯示熱度圖
           <input type="checkbox" id="toggleHeatmap" />
         </label>
+        <span id="summary" class="summary flex-grow"></span>
       </div>
-      <span id="summary" class="summary"></span>
-      <button id="btnClearFilters" class="secondary full" type="button">清除條件</button>
-      <button id="btnApplyFilters" class="full">套用條件</button>
+      <div class="inline-inputs single-row">
+        <button id="btnClearFilters" class="secondary btn-equal" type="button">清除條件</button>
+        <button id="btnApplyFilters" class="btn-equal">套用條件</button>
+      </div>
     </div>
     <datalist id="eventTypeOptions">
       <option value="土石滑落"></option>
@@ -327,41 +390,103 @@
       return (value * Math.PI) / 180;
     }
 
+    const MS_PER_MINUTE = 60 * 1000;
+    const TAIPEI_OFFSET_MINUTES = 8 * 60;
+    const TAIPEI_OFFSET_MS = TAIPEI_OFFSET_MINUTES * MS_PER_MINUTE;
+    const DATE_TIME_INPUT_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
+    const DATE_TIME_FALLBACK_PATTERN = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::\d{2})?$/;
+    const UTC_TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(?:Z)?$/i;
+
+    function pad2(value) {
+      return value.toString().padStart(2, '0');
+    }
+
     function formatDateInput(date) {
-      const pad = (n) => n.toString().padStart(2, '0');
-      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+      const tzDate = new Date(date.getTime() + TAIPEI_OFFSET_MS);
+      return `${tzDate.getUTCFullYear()}-${pad2(tzDate.getUTCMonth() + 1)}-${pad2(tzDate.getUTCDate())}T${pad2(tzDate.getUTCHours())}:${pad2(tzDate.getUTCMinutes())}`;
     }
 
     function setDateInputValue(input, value) {
-      if (!value) return;
-      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) {
-        input.value = value;
-        return;
-      }
-      const parsed = new Date(value);
-      if (!Number.isNaN(parsed.getTime())) {
-        input.value = formatDateInput(parsed);
+      const sanitized = sanitizeDateValue(value);
+      if (sanitized) {
+        input.value = sanitized;
       }
     }
 
     function sanitizeDateValue(value) {
       const trimmed = (value || '').trim();
       if (!trimmed) return null;
-      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)) {
+      const direct = DATE_TIME_INPUT_PATTERN.exec(trimmed);
+      if (direct) {
         return trimmed;
       }
-      const parsed = new Date(trimmed);
-      if (Number.isNaN(parsed.getTime())) return null;
-      return formatDateInput(parsed);
+      const fallback = DATE_TIME_FALLBACK_PATTERN.exec(trimmed);
+      if (fallback) {
+        return `${fallback[1]}-${fallback[2]}-${fallback[3]}T${fallback[4]}:${fallback[5]}`;
+      }
+      const parsed = Date.parse(trimmed);
+      if (Number.isNaN(parsed)) return null;
+      return formatDateInput(new Date(parsed));
+    }
+
+    function normalizedLocalToUtcDate(normalized) {
+      if (!normalized) return null;
+      const match = DATE_TIME_INPUT_PATTERN.exec(normalized);
+      if (!match) return null;
+      const year = Number(match[1]);
+      const month = Number(match[2]) - 1;
+      const day = Number(match[3]);
+      const hour = Number(match[4]);
+      const minute = Number(match[5]);
+      const utcMs = Date.UTC(year, month, day, hour, minute);
+      return new Date(utcMs - TAIPEI_OFFSET_MS);
+    }
+
+    function formatUtcForApi(date) {
+      if (!date) return null;
+      return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}T${pad2(date.getUTCHours())}:${pad2(date.getUTCMinutes())}Z`;
+    }
+
+    function localInputToUtcString(normalized) {
+      const utcDate = normalizedLocalToUtcDate(normalized);
+      return utcDate ? formatUtcForApi(utcDate) : null;
+    }
+
+    function localInputToUtcMillis(normalized) {
+      const utcDate = normalizedLocalToUtcDate(normalized);
+      return utcDate ? utcDate.getTime() : null;
     }
 
     function formatDisplayDate(value) {
-      if (!value) return '';
       const normalized = sanitizeDateValue(value);
       if (!normalized) return '';
-      const [datePart, timePart] = normalized.split('T');
-      const [year, month, day] = datePart.split('-');
-      return `${year}/${month}/${day} ${timePart}`;
+      const match = DATE_TIME_INPUT_PATTERN.exec(normalized);
+      if (!match) return normalized.replace('T', ' ');
+      return `${match[1]}/${match[2]}/${match[3]} ${match[4]}:${match[5]}`;
+    }
+
+    function parseUtcTimestamp(value) {
+      if (!value) return null;
+      const trimmed = value.trim();
+      const match = UTC_TIMESTAMP_PATTERN.exec(trimmed);
+      if (match) {
+        const year = Number(match[1]);
+        const month = Number(match[2]) - 1;
+        const day = Number(match[3]);
+        const hour = Number(match[4]);
+        const minute = Number(match[5]);
+        const second = Number(match[6] || '0');
+        return new Date(Date.UTC(year, month, day, hour, minute, second));
+      }
+      const parsed = Date.parse(trimmed);
+      if (Number.isNaN(parsed)) return null;
+      return new Date(parsed);
+    }
+
+    function formatUtcTimestampForDisplay(value) {
+      const date = parseUtcTimestamp(value);
+      if (!date) return value || '';
+      return formatDisplayDate(formatDateInput(date));
     }
 
     function describeTimeRange(start, end) {
@@ -390,6 +515,20 @@
       return typeof item.latitude === 'number' && typeof item.longitude === 'number';
     }
 
+    function toPhotoUrl(name) {
+      if (!name) return null;
+      return /^https?:\/\//i.test(name) ? name : `/events/pictures/${encodeURIComponent(name)}`;
+    }
+
+    function escapeHtml(text) {
+      return (text ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     function describeCenter(center) {
       if (!center) return '';
       return `${center.lat.toFixed(3)}, ${center.lon.toFixed(3)}`;
@@ -398,16 +537,20 @@
     function collectFilters() {
       const eventType = (eventTypeInput.value || '').trim();
       const routeLine = (routeLineInput.value || '').trim();
-      const startTime = sanitizeDateValue(startTimeInput.value);
-      const endTime = sanitizeDateValue(endTimeInput.value);
+      const startTimeLocal = sanitizeDateValue(startTimeInput.value);
+      const endTimeLocal = sanitizeDateValue(endTimeInput.value);
       const center = parseCenter(lonInput.value, latInput.value);
       const rangeKm = toPositiveNumber(rangeInput.value);
       return {
         api: {
           event_type: eventType || null,
           route_line: routeLine || null,
-          start_time: startTime,
-          end_time: endTime,
+          start_time: localInputToUtcString(startTimeLocal),
+          end_time: localInputToUtcString(endTimeLocal),
+        },
+        display: {
+          start_time: startTimeLocal,
+          end_time: endTimeLocal,
         },
         center,
         rangeKm,
@@ -431,8 +574,8 @@
       updateQueryParams({
         event_type: resolved.api.event_type,
         route_line: resolved.api.route_line,
-        start_time: resolved.api.start_time,
-        end_time: resolved.api.end_time,
+        start_time: resolved.display?.start_time || null,
+        end_time: resolved.display?.end_time || null,
         lon: resolved.center ? formatCoord(resolved.center.lon) : null,
         lat: resolved.center ? formatCoord(resolved.center.lat) : null,
         range_km: resolved.rangeKm ?? null,
@@ -557,21 +700,29 @@
         segments.push(`<div>位置描述：${desc}</div>`);
       }
       if (item.created_at) {
-        segments.push(`<div>建立時間：${item.created_at}</div>`);
+        segments.push(`<div>建立時間：${formatUtcTimestampForDisplay(item.created_at)}</div>`);
       }
       const photoList = Array.isArray(item.photo_filenames) && item.photo_filenames.length
         ? item.photo_filenames
         : (item.photo_filename ? [item.photo_filename] : []);
-      const firstPhoto = photoList[0];
-      if (firstPhoto) {
-        const photoUrl = /^https?:\/\//i.test(firstPhoto)
-          ? firstPhoto
-          : `/events/pictures/${encodeURIComponent(firstPhoto)}`;
-        segments.push(`
-          <a href="${photoUrl}" target="_blank" rel="noopener" style="display:block;margin-top:6px;text-align:center;">
-            <img src="${photoUrl}" alt="事件照片" style="display:inline-block;margin:0 auto;border-radius:6px;max-width:100%;max-height:300px;height:auto;width:auto;" />
-          </a>
-        `);
+      if (photoList.length) {
+        const thumbs = photoList
+          .map((photo, index) => {
+            const url = toPhotoUrl(photo);
+            if (!url) return '';
+            const name = typeof photo === 'string' ? photo : `photo-${index + 1}`;
+            return `
+              <a class="popup-photo-link" href="${url}" target="_blank" rel="noopener"
+                 title="查看照片 ${escapeHtml(name)}">
+                <img src="${url}" alt="事件照片 ${index + 1}" loading="lazy" />
+              </a>
+            `;
+          })
+          .filter(Boolean)
+          .join('');
+        if (thumbs) {
+          segments.push(`<div class="popup-photos">${thumbs}</div>`);
+        }
       }
       return segments.join('');
     }
@@ -590,9 +741,9 @@
 
     function computeHeatWeight(createdAt, nowTs) {
       if (!createdAt) return 0;
-      const ts = Date.parse(createdAt);
-      if (Number.isNaN(ts)) return 0;
-      const diffMs = Math.max(0, nowTs - ts);
+      const date = parseUtcTimestamp(createdAt);
+      if (!date) return 0;
+      const diffMs = Math.max(0, nowTs - date.getTime());
       const diffDays = diffMs / (1000 * 60 * 60 * 24);
       if (diffDays <= 1) {
         return 1;
@@ -630,7 +781,7 @@
 
     async function loadEvents({ eventId = null, center = null, presetFilters = null } = {}) {
       const filters = presetFilters || collectFilters();
-      const { api, center: filterCenter, rangeKm } = filters;
+      const { api, display, center: filterCenter, rangeKm } = filters;
       currentEventId = eventId;
       try {
         setStatus(eventId ? `載入事件 ID ${eventId} 中…` : '載入事件列表中…');
@@ -656,8 +807,8 @@
             totalFetched: items.length,
             eventType: api.event_type,
             routeLine: api.route_line,
-            startTime: api.start_time,
-            endTime: api.end_time,
+            startTime: display?.start_time || null,
+            endTime: display?.end_time || null,
             rangeKm,
             rangeCenter,
             rangeApplied,
@@ -700,7 +851,9 @@
 
     document.getElementById('btnApplyFilters').addEventListener('click', () => {
       const filters = collectFilters();
-      if (filters.api.start_time && filters.api.end_time && filters.api.start_time > filters.api.end_time) {
+      const startMs = localInputToUtcMillis(filters.display.start_time);
+      const endMs = localInputToUtcMillis(filters.display.end_time);
+      if (startMs !== null && endMs !== null && startMs > endMs) {
         setStatus('時間範圍不正確，請確認起訖順序。');
         return;
       }
