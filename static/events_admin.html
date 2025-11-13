@@ -7,6 +7,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
     integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <style>
     body {
       padding: 20px;
@@ -132,6 +134,19 @@
     .photo-empty {
       font-size: 0.9rem;
       color: #6b7280;
+    }
+
+    .map-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 16px;
+      background: #fff;
+    }
+
+    .coordinate-map {
+      height: 280px;
+      border-radius: 10px;
+      overflow: hidden;
     }
   </style>
 </head>
@@ -261,6 +276,7 @@
       </div>
       <form id="editForm" class="row g-3">
         <input type="hidden" name="id" />
+
         <div class="col-md-6">
           <label class="form-label">事件類型 *</label>
           <input type="text" class="form-control" name="event_type" required />
@@ -298,13 +314,25 @@
             <small class="text-muted d-block mt-2">支援多張圖片（單次最多 10 張），亦可輸入外部網址。</small>
           </div>
         </div>
-        <div class="col-md-6">
-          <label class="form-label">經度</label>
-          <input type="text" pattern="^-?\d+(\.\d{1,6})?$" class="form-control" name="longitude" placeholder="例如 121.123456" />
-        </div>
-        <div class="col-md-6">
-          <label class="form-label">緯度</label>
-          <input type="text" pattern="^-?\d+(\.\d{1,6})?$" class="form-control" name="latitude" placeholder="例如 24.123456" />
+        <div class="col-12">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <label class="form-label mb-0">座標</label>
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnPickOnMap">在地圖上點選座標</button>
+          </div>
+          <div class="map-card" id="mapPickerCard">
+            <div class="row g-2 mb-2">
+              <div class="col-sm-6">
+                <label class="form-label">經度</label>
+                <input type="text" pattern="^-?\d+(\.\d{1,6})?$" class="form-control" name="longitude" placeholder="例如：121.123456" />
+              </div>
+              <div class="col-sm-6">
+                <label class="form-label">緯度</label>
+                <input type="text" pattern="^-?\d+(\.\d{1,6})?$" class="form-control" name="latitude" placeholder="例如：24.123456" />
+              </div>
+            </div>
+            <div id="mapPicker" class="coordinate-map"></div>
+            <small class="text-muted d-block mt-2">在地圖上點擊位置，可自動填入經緯度。</small>
+          </div>
         </div>
         <div class="col-md-6">
           <label class="form-label">地點標題</label>
@@ -321,6 +349,9 @@
       </form>
     </div>
   </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
   <script>
     const state = {
@@ -350,9 +381,17 @@
     const photoUploadInput = document.getElementById("photoUploadInput");
     const btnAddPhotoUrl = document.getElementById("btnAddPhotoUrl");
     const btnClearPhotos = document.getElementById("btnClearPhotos");
+    const btnPickOnMap = document.getElementById("btnPickOnMap");
+    const mapPickerCard = document.getElementById("mapPickerCard");
+    const longitudeInput = editForm.elements.longitude;
+    const latitudeInput = editForm.elements.latitude;
+    const coordinateInputs = longitudeInput && latitudeInput ? [longitudeInput, latitudeInput] : [];
     let editingId = null;
     let currentPhotos = [];
     let newUploads = new Set();
+    let coordinateMap = null;
+    let coordinateMarker = null;
+    const fallbackCoordinate = { lat: 23.6978, lng: 120.9605 };
 
     function isLocalPhotoName(name) {
       return typeof name === "string" && !/^https?:\/\//i.test(name);
@@ -381,6 +420,71 @@
       const names = Array.from(newUploads);
       newUploads.clear();
       await requestDeletePhotos(names);
+    }
+
+    function initCoordinateMap() {
+      if (!window.L) return null;
+      if (coordinateMap) return coordinateMap;
+      coordinateMap = L.map("mapPicker", {
+        center: [fallbackCoordinate.lat, fallbackCoordinate.lng],
+        zoom: 8,
+        scrollWheelZoom: true,
+      });
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors',
+        maxZoom: 19,
+      }).addTo(coordinateMap);
+      coordinateMap.on("click", (evt) => {
+        const { lat, lng } = evt.latlng;
+        updateCoordinateInputs(lat, lng);
+        placeCoordinateMarker(lat, lng);
+      });
+      return coordinateMap;
+    }
+
+    function updateCoordinateInputs(lat, lng) {
+      if (!latitudeInput || !longitudeInput) return;
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+      latitudeInput.value = lat.toFixed(6);
+      longitudeInput.value = lng.toFixed(6);
+    }
+
+    function placeCoordinateMarker(lat, lng) {
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+      const map = initCoordinateMap();
+      if (!map) return;
+      if (coordinateMarker) {
+        coordinateMarker.setLatLng([lat, lng]);
+      } else {
+        coordinateMarker = L.marker([lat, lng], { draggable: true }).addTo(map);
+        coordinateMarker.on("dragend", (evt) => {
+          const { lat, lng } = evt.target.getLatLng();
+          updateCoordinateInputs(lat, lng);
+        });
+      }
+      map.setView([lat, lng], Math.max(map.getZoom(), 13));
+    }
+
+    function resetCoordinateMarker() {
+      if (coordinateMap && coordinateMarker) {
+        coordinateMap.removeLayer(coordinateMarker);
+        coordinateMarker = null;
+      }
+    }
+
+    function syncMapWithInputs() {
+      if (!window.L || !document.getElementById("mapPicker")) return;
+      if (!latitudeInput || !longitudeInput) return;
+      const map = initCoordinateMap();
+      const lat = parseFloat(latitudeInput.value);
+      const lng = parseFloat(longitudeInput.value);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        placeCoordinateMarker(lat, lng);
+      } else {
+        resetCoordinateMarker();
+        map.setView([fallbackCoordinate.lat, fallbackCoordinate.lng], 8);
+      }
+      setTimeout(() => map.invalidateSize(), 150);
     }
 
     function resolvePhotoUrl(name) {
@@ -428,6 +532,44 @@
         if (removed && newUploads.has(removed) && isLocalPhotoName(removed)) {
           newUploads.delete(removed);
           await requestDeletePhotos([removed]);
+        }
+      });
+    }
+
+    if (coordinateInputs.length === 2) {
+      coordinateInputs.forEach((input) => {
+        input.addEventListener("change", () => {
+          const lat = parseFloat(latitudeInput.value);
+          const lng = parseFloat(longitudeInput.value);
+          if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            placeCoordinateMarker(lat, lng);
+          } else {
+            resetCoordinateMarker();
+          }
+        });
+      });
+    }
+
+    if (btnPickOnMap && coordinateInputs.length === 2) {
+      btnPickOnMap.addEventListener("click", async () => {
+        syncMapWithInputs();
+        if (mapPickerCard) {
+          mapPickerCard.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+        if (navigator.geolocation && (!longitudeInput.value || !latitudeInput.value)) {
+          try {
+            const position = await new Promise((resolve, reject) => {
+              navigator.geolocation.getCurrentPosition(resolve, reject, {
+                enableHighAccuracy: true,
+                timeout: 5000,
+              });
+            });
+            const { latitude, longitude } = position.coords;
+            updateCoordinateInputs(latitude, longitude);
+            placeCoordinateMarker(latitude, longitude);
+          } catch (err) {
+            console.warn("Unable to retrieve geolocation", err);
+          }
         }
       });
     }
@@ -811,6 +953,9 @@
       newUploads = new Set();
       renderPhotoPreview();
       editModal.classList.remove("d-none");
+      setTimeout(() => {
+        syncMapWithInputs();
+      }, 50);
     }
 
     async function closeModal(options = {}) {
@@ -825,6 +970,10 @@
       editForm.reset();
       currentPhotos = [];
       renderPhotoPreview();
+      resetCoordinateMarker();
+      if (coordinateMap) {
+        coordinateMap.setView([fallbackCoordinate.lat, fallbackCoordinate.lng], 8);
+      }
     }
 
     async function openEditModal(id) {
