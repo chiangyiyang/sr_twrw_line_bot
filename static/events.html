@@ -231,7 +231,7 @@
           <button id="btnReload" class="secondary" title="重新載入事件資料">重新載入</button>
           <button id="btnToggleFilters" class="secondary" title="收合或展開查詢面板">-</button>
         </div>
-        <p>即時呈現 LINE 回報事件，可依事件 ID、類型、路線與座標快速定位。</p>
+        <p>即時呈現 LINE 回報事件，可依事件 ID、類型、路線與坐標快速定位。</p>
       </div>
     </div>
     <div id="extraFilters" class="controls">
@@ -693,7 +693,7 @@
         segments.push(`<div>里程：${item.mileage_text}</div>`);
       }
       if (hasCoordinates(item)) {
-        segments.push(`<div>座標：${item.longitude.toFixed(5)}, ${item.latitude.toFixed(5)}</div>`);
+        segments.push(`<div>坐標：${item.longitude.toFixed(5)}, ${item.latitude.toFixed(5)}</div>`);
       }
       if (item.location_title || item.location_address) {
         const desc = [item.location_title, item.location_address].filter(Boolean).join(' / ');

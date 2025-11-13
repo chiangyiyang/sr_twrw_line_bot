@@ -156,7 +156,7 @@ def _build_line_selection_messages() -> List[TemplateSendMessage]:
         template = CarouselTemplate(columns=group)
         messages.append(
             TemplateSendMessage(
-                alt_text=f"里程轉座標 - 選擇路線 {index}/{total_groups}",
+                alt_text=f"里程轉坐標 - 選擇路線 {index}/{total_groups}",
                 template=template,
             )
         )
@@ -437,7 +437,7 @@ def _handle_distance_value(
             TextSendMessage(text=f"這個地點經度為 {longitude:.6f}, 緯度為 {latitude:.6f}"),
             LocationSendMessage(
                 title=f"{session.line_name} {marker}",
-                address="里程轉座標結果",
+                address="里程轉坐標結果",
                 latitude=latitude,
                 longitude=longitude,
             ),
@@ -496,7 +496,7 @@ def _respond_with_location(
     if result is None:
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text="附近找不到對應的路線里程，請再確認座標。"),
+            TextSendMessage(text="附近找不到對應的路線里程，請再確認坐標。"),
         )
         return True
 
@@ -504,7 +504,7 @@ def _respond_with_location(
     marker = _format_distance_marker(distance)
     if offset > 10:
         distance_text = int(round(offset))
-        message = f"距離座標最近的路線為「{line_name}{marker}」，距離{distance_text}公尺"
+        message = f"距離坐標最近的路線為「{line_name}{marker}」，距離{distance_text}公尺"
     else:
         message = f"這個地點為 {line_name} {marker}"
     line_bot_api.reply_message(

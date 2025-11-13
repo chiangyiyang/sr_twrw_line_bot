@@ -41,7 +41,7 @@ _CONFIRM_YES = {"是", "是的", "確認", "沒問題", "ok", "ok的", "ＯＫ"}
 _CONFIRM_NO = {"否", "不是", "重新輸入", "不正確", "否定"}
 
 _EVENT_TYPES = ["土石滑落", "落石", "路樹侵入", "其他"]
-_LOCATION_METHOD_OPTIONS = ["軌道里程", "位置座標"]
+_LOCATION_METHOD_OPTIONS = ["軌道里程", "位置坐標"]
 _ROUTE_LINES = ["平溪線", "深澳線", "宜蘭線", "北迴線"]
 _ROUTE_LINES_LEFT_RIGHT = {"平溪線", "深澳線"}
 _ROUTE_LINES_EAST_WEST = {"宜蘭線", "北迴線"}
@@ -195,7 +195,7 @@ def _prompt_coordinate_input(event: MessageEvent, line_bot_api: LineBotApi) -> N
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(
-            text="請分享位置或輸入經緯度座標（例如 121.123, 24.123）：",
+            text="請分享位置或輸入經緯度坐標（例如 121.123, 24.123）：",
             quick_reply=quick_reply,
         ),
     )
@@ -427,7 +427,7 @@ def _handle_mileage(event: MessageEvent, session: Session, incoming_text: str, l
     if not coords:
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text="查無該里程座標，請確認輸入範圍後再試一次。"),
+            TextSendMessage(text="查無該里程坐標，請確認輸入範圍後再試一次。"),
         )
         return True
 

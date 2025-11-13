@@ -312,8 +312,8 @@ def handle_text_message(event: MessageEvent):
             items=[
                 QuickReplyButton(action=MessageAction(label="回報事件", text="回報事件")),
                 QuickReplyButton(action=MessageAction(label="查雨量", text="查雨量")),
-                # QuickReplyButton(action=MessageAction(label="里程轉座標", text="里程轉座標")),
-                # QuickReplyButton(action=MessageAction(label="座標轉里程", text="座標轉里程")),
+                # QuickReplyButton(action=MessageAction(label="里程轉坐標", text="里程轉坐標")),
+                # QuickReplyButton(action=MessageAction(label="坐標轉里程", text="坐標轉里程")),
                 QuickReplyButton(action=MessageAction(label="CCTV", text="CCTV")),
                 QuickReplyButton(action=MessageAction(label="取消", text="取消")),
             ]

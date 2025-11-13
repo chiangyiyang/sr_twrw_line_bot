@@ -507,7 +507,7 @@
       }
       if (meta.eventId) {
         if (heatCount) {
-          return `顯示事件 ID：${meta.eventId}（熱度圖共 ${heatCount} 筆座標）`;
+          return `顯示事件 ID：${meta.eventId}（熱度圖共 ${heatCount} 筆坐標）`;
         }
         return `顯示事件 ID：${meta.eventId}（缺少經緯度資訊）`;
       }
@@ -524,7 +524,7 @@
           parts.push(`範圍：${meta.rangeKm} 公里（未套用，請輸入經緯度）`);
         }
       }
-      parts.push(`熱度圖顯示 ${heatCount} 筆座標`);
+      parts.push(`熱度圖顯示 ${heatCount} 筆坐標`);
       return parts.join(' ｜ ');
     }
 
