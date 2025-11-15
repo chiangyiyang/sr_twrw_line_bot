@@ -57,7 +57,7 @@
     attribution: '&copy; OpenStreetMap'
   }).addTo(map);
 
-  const geojsonUrl = 'cctv_data.json';
+  const dataUrl = 'cctv_data.json';
   function getCoordinateQuery() {
     const params = new URLSearchParams(window.location.search);
     const lonText = params.get('lon') ?? params.get('lng');
@@ -74,32 +74,27 @@
   }
   const queryCoordinate = getCoordinateQuery();
   
-  let geojson;
+  let data = [];
   try {
-    const res = await fetch(geojsonUrl);
+    const res = await fetch(dataUrl);
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    geojson = await res.json();
+    const payload = await res.json();
+    const cameras = Array.isArray(payload.cameras) ? payload.cameras : [];
+    data = cameras.map(cam => {
+      const lat = Number(cam.lat);
+      const lng = Number(cam.lng);
+      const id = cam.id || '';
+      const name = cam.name || cam.id || '';
+      const url = cam.stream || '';
+      return { id, name, lat, lng, url, raw: cam };
+    }).filter(d => Number.isFinite(d.lat) && Number.isFinite(d.lng));
+    const totalCount = Number(payload.count) || cameras.length;
+    console.log(`載入 CCTV 清單 (${dataUrl})：共 ${totalCount} 筆`, payload);
+    console.log(`解析出 ${data.length} 筆有效 CCTV 資料`, data);
   } catch (err) {
-      alert('載入 CCTV GeoJSON 失敗：' + err.message + '\n\n請確認檔案路徑為 cctv_data.json，或改用本機開發伺服器提供靜態檔案。');
+      alert('載入 CCTV 清單失敗：' + err.message + '\n\n請確認檔案路徑為 cctv_data.json，或改用本機開發伺服器提供靜態檔案。');
     return;
   }
-
-  const features = Array.isArray(geojson.features) ? geojson.features : [];
-  const data = features.map(f => {
-    const coords = f.geometry && f.geometry.coordinates;
-    const lng = parseFloat(coords && coords[0]);
-    const lat = parseFloat(coords && coords[1]);
-    const p = f.properties || {};
-    const id = p.id || p.ID || p.CCTVID || '';
-    const name = p.name || p.Location || (p.raw_fields && p.raw_fields.Location) || '';
-    const county = p.city || p.county || '';
-    const url = p.stream_url || p.url || (p.raw_fields && p.raw_fields.url) || '';
-    return { id, name, county, lat, lng, url, raw: f };
-  }).filter(d => Number.isFinite(d.lat) && Number.isFinite(d.lng));
-
-  console.log(`解析出 ${data.length} 筆 CCTV 資料 (來自 GeoJSON)`, data);
-
-  console.log(`解析出 ${data.length} 筆有效 CCTV 資料`, data);
 
   // 建立圖層與標記
   const markers = [];
