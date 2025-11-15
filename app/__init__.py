@@ -2,7 +2,7 @@ import os
 import sys
 from typing import Any, Dict, Optional, Set
 
-from flask import Flask, abort, jsonify, request, send_from_directory
+from flask import Flask, abort, jsonify, render_template, request, send_from_directory
 from dotenv import load_dotenv
 
 from linebot import LineBotApi, WebhookHandler
@@ -30,6 +30,7 @@ from . import state
 from .paths import STATIC_DIR, DATA_DIR, EVENT_PICTURES_DIR
 from .auth import auth_bp, login_required
 from .audit_log import init_app as audit_init_app, record_action as audit_record_action
+from .static_data import static_data_bp
 
 
 load_dotenv()
@@ -55,6 +56,7 @@ app.config["GOOGLE_ALLOWED_DOMAINS"] = _as_env_set(os.getenv("GOOGLE_ALLOWED_DOM
 rainfall_service.init_app(app)
 app.register_blueprint(report_event_api_bp)
 app.register_blueprint(auth_bp)
+app.register_blueprint(static_data_bp)
 
 
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
@@ -70,56 +72,45 @@ line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN) if CHANNEL_ACCESS_TOKEN else Non
 handler = WebhookHandler(CHANNEL_SECRET) if CHANNEL_SECRET else None
 
 
+def _send_html(filename: str):
+    response = send_from_directory(str(STATIC_DIR), filename)
+    response.headers.setdefault("Content-Type", "text/html; charset=utf-8")
+    return response
+
+STATIC_PAGE_ROUTES = [
+    ("/rainfall.html", "rainfall.html", False),
+    ("/cctv.html", "cctv.html", False),
+    ("/events.html", "events.html", False),
+    ("/events_heatmap.html", "events_heatmap.html", False),
+    ("/login.html", "login.html", False),
+    ("/events_admin.html", "events_admin.html", True),
+    ("/audit_logs.html", "audit_logs.html", True),
+]
+
+
+def _make_static_page_handler(filename: str):
+    def handler():
+        return _send_html(filename)
+
+    handler.__name__ = f"static_page_{filename.replace('.', '_')}"
+    return handler
+
+
+def _register_static_page_routes():
+    for route, filename, requires_auth in STATIC_PAGE_ROUTES:
+        view_func = _make_static_page_handler(filename)
+        if requires_auth:
+            view_func = login_required(view_func)
+        endpoint = f"static_page_{filename.replace('.', '_')}"
+        app.add_url_rule(route, endpoint, view_func)
+
+
+_register_static_page_routes()
+
+
 @app.get("/")
 def health():
     return {"status": "ok"}
-
-
-@app.get("/rainfall.html")
-def rainfall_page():
-    return _send_html("rainfall.html")
-
-
-@app.get("/cctv.html")
-def cctv_page():
-    return _send_html("cctv.html")
-
-
-@app.get("/cctv_data.json")
-def cctv_data():
-    return send_from_directory(str(DATA_DIR), "cctv_data.json")
-
-
-@app.get("/events.html")
-def events_page():
-    return _send_html("events.html")
-
-
-@app.get("/events_heatmap.html")
-def events_heatmap_page():
-    return _send_html("events_heatmap.html")
-
-
-@app.get("/login.html")
-def login_page():
-    return _send_html("login.html")
-
-
-@app.get("/events/pictures/<path:filename>")
-def event_picture(filename: str):
-    return send_from_directory(str(EVENT_PICTURES_DIR), filename)
-
-
-@app.get("/events_admin.html")
-@login_required
-def events_admin_page():
-    return _send_html("events_admin.html")
-
-
-@app.get("/audit_logs.html")
-@login_required
-def audit_logs_page():
-    return _send_html("audit_logs.html")
 
 
 @app.post("/callback")
@@ -144,48 +135,7 @@ def handle_unauthorized(error):
     if request.path.startswith("/api/"):
         return jsonify({"error": description, "status": 401}), 401
     if request.path.endswith("events_admin.html"):
-        html = f"""
-        <!DOCTYPE html>
-        <html lang="zh-Hant">
-        <head>
-          <meta charset="utf-8" />
-          <title>Unauthorized</title>
-          <style>
-            body {{
-              margin: 0;
-              min-height: 100vh;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              font-family: system-ui, 'Noto Sans TC', sans-serif;
-              background: #f5f6f8;
-            }}
-            .card {{
-              background: #fff;
-              padding: 32px;
-              border-radius: 16px;
-              box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
-              text-align: center;
-              max-width: 360px;
-            }}
-            a {{
-              display: inline-block;
-              margin-top: 16px;
-              text-decoration: none;
-              color: #2563eb;
-            }}
-          </style>
-        </head>
-        <body>
-          <main class="card">
-            <h1>Unauthorized 請先登入</h1>
-            <p>請使用授權 Google 帳號登入後再試一次。</p>
-            <a href="/login.html">前往登入頁面</a>
-          </main>
-        </body>
-        </html>
-        """
-        return html, 401
+        return render_template("errors/401.html", description=description), 401
     return description, 401
 
 
@@ -265,6 +215,23 @@ def _record_line_event(
     )
 
 
+TEXT_MESSAGE_HANDLERS = [
+    ("rainfall_topic", rainfall_topic.handle_message_event),
+    ("cctv_topic", cctv_topic.handle_message_event),
+    ("location_topic", location_topic.handle_message_event),
+    ("event_report_topic", event_report_topic.handle_message_event),
+    ("quick_replies", quick_replies.handle_message_event),
+    ("message_types", message_types.handle_message_event),
+]
+
+
+def _dispatch_text_handlers(event: MessageEvent) -> Optional[str]:
+    for handler_name, handler in TEXT_MESSAGE_HANDLERS:
+        if handler(event, line_bot_api):
+            return handler_name
+    return None
+
+
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event: MessageEvent):
     print(f"Received message: {event.message.text}")
@@ -277,25 +244,7 @@ def handle_text_message(event: MessageEvent):
         )
         return
 
-    handled_by: Optional[str] = None
-    if rainfall_topic.handle_message_event(event, line_bot_api):
-        handled_by = "rainfall_topic"
-
-    elif cctv_topic.handle_message_event(event, line_bot_api):
-        handled_by = "cctv_topic"
-
-    elif location_topic.handle_message_event(event, line_bot_api):
-        handled_by = "location_topic"
-
-    elif event_report_topic.handle_message_event(event, line_bot_api):
-        handled_by = "event_report_topic"
-
-    elif quick_replies.handle_message_event(event, line_bot_api):
-        handled_by = "quick_replies"
-
-    elif message_types.handle_message_event(event, line_bot_api):
-        handled_by = "message_types"
-
+    handled_by = _dispatch_text_handlers(event)
     if handled_by:
         _record_line_event(
             "line.text_message",
@@ -430,7 +379,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-def _send_html(filename: str):
-    response = send_from_directory(str(STATIC_DIR), filename)
-    response.headers.setdefault("Content-Type", "text/html; charset=utf-8")
-    return response
