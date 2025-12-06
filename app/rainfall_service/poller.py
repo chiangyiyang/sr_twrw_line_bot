@@ -213,6 +213,16 @@ def run_once(verbose: bool = True) -> bool:
     repository.set_last_success_at(timestamp)
     if verbose:
         print(f"INFO: 已更新 {len(items)} 筆雨量資料。")
+    
+    # Clean up old observations
+    try:
+        deleted_count = repository.delete_observations_older_than_days(1)
+        if verbose:
+            print(f"INFO: 已清除 {deleted_count} 筆過期雨量資料 (保留 1 天內資料)。")
+    except Exception as exc:
+        if verbose:
+            print(f"WARN: 清除過期資料失敗 - {exc}")
+    
     return True
 
 

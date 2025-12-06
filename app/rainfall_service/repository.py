@@ -139,6 +139,24 @@ def get_last_success_at() -> Optional[str]:
     return row["last_success_at"] if row else None
 
 
+def delete_observations_older_than_days(days: int) -> int:
+    """Delete observations older than the specified number of days.
+    
+    Args:
+        days: Number of days to retain (observations older than this will be deleted)
+        
+    Returns:
+        Number of records deleted
+    """
+    conn = get_connection()
+    with conn:
+        cursor = conn.execute(
+            "DELETE FROM observations WHERE obs_time < datetime('now', ? || ' day')",
+            (f"-{days}",),
+        )
+        return cursor.rowcount
+
+
 def get_latest_obs_time() -> Optional[str]:
     conn = get_connection()
     row = conn.execute("SELECT MAX(obs_time) AS obs_time FROM observations").fetchone()
@@ -251,4 +269,5 @@ __all__ = [
     "upsert_observations",
     "set_last_success_at",
     "get_last_success_at",
+    "delete_observations_older_than_days",
 ]
