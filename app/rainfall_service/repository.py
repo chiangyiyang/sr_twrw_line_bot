@@ -139,22 +139,31 @@ def get_last_success_at() -> Optional[str]:
     return row["last_success_at"] if row else None
 
 
-def delete_observations_older_than_days(days: int) -> int:
+def delete_observations_older_than_days(days: int, vacuum: bool = True) -> int:
     """Delete observations older than the specified number of days.
     
     Args:
         days: Number of days to retain (observations older than this will be deleted)
+        vacuum: If True, reclaim disk space by reorganizing the database (default: True)
         
     Returns:
         Number of records deleted
     """
     conn = get_connection()
+    
+    # DELETE operation must be in a transaction
     with conn:
         cursor = conn.execute(
             "DELETE FROM observations WHERE obs_time < datetime('now', ? || ' day')",
             (f"-{days}",),
         )
-        return cursor.rowcount
+        deleted_count = cursor.rowcount
+    
+    # VACUUM must be executed outside of a transaction
+    if deleted_count > 0 and vacuum:
+        conn.execute("VACUUM")
+    
+    return deleted_count
 
 
 def get_latest_obs_time() -> Optional[str]:

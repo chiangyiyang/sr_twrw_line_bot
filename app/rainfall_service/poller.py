@@ -214,11 +214,13 @@ def run_once(verbose: bool = True) -> bool:
     if verbose:
         print(f"INFO: 已更新 {len(items)} 筆雨量資料。")
     
-    # Clean up old observations
+    # Clean up old observations and reclaim disk space
     try:
-        deleted_count = repository.delete_observations_older_than_days(1)
-        if verbose:
-            print(f"INFO: 已清除 {deleted_count} 筆過期雨量資料 (保留 1 天內資料)。")
+        deleted_count = repository.delete_observations_older_than_days(1, vacuum=True)
+        if verbose and deleted_count > 0:
+            print(f"INFO: 已清除 {deleted_count} 筆過期雨量資料並回收磁碟空間。")
+        elif verbose:
+            print("INFO: 沒有過期資料需要清除。")
     except Exception as exc:
         if verbose:
             print(f"WARN: 清除過期資料失敗 - {exc}")
